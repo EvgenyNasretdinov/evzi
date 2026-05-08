@@ -1,0 +1,17 @@
+{
+  "name": "intent-check",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "dev:extension": "pnpm --filter ./apps/extension dev",
+    "dev:judge": "pnpm --filter ./apps/judge dev"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  },
+  "packageManager": "pnpm@9.12.0"
+}
