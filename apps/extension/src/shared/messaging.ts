@@ -1,4 +1,4 @@
-import type { JudgeVerdict, WalletRequest } from "@intent-check/types";
+import type { JudgeVerdict, WalletRequest, UserIntent } from "@intent-check/types";
 
 // Inpage <-> content-script messages travel via window.postMessage with a marker.
 export const IC_PORT = "intent-check";
@@ -13,7 +13,9 @@ export type ContentToInpage =
 
 // Content-script <-> background messages use chrome.runtime.
 export type ContentToBackground =
-  | { kind: "judge_request"; id: string; tabId?: number; payload: { request: WalletRequest; origin: string; pageSnapshot: PageSnapshot } };
+  | { kind: "judge_request"; id: string; tabId?: number; payload: { request: WalletRequest; origin: string; pageSnapshot: PageSnapshot } }
+  | { kind: "user_intent_confirmed"; id: string; intent: UserIntent }
+  | { kind: "user_decision"; id: string; decision: "approve" | "reject" };
 
 export type BackgroundToContent =
   | { kind: "judge_result"; id: string; verdict: JudgeVerdict; userDecision: "approve" | "reject" }

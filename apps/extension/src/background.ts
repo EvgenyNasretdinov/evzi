@@ -9,24 +9,38 @@ import {
   CHAIN_ID_TO_NETWORK_ID,
 } from "./shared/config";
 
-interface PendingItem {
-  id: string;
-  tabId: number;
-  request: WalletRequest;
-  origin: string;
-  pageSnapshot: PageSnapshot;
-  judgeInput: JudgeInput;
-  verdict: JudgeVerdict;
-}
+type PhaseState =
+  | {
+      phase: "awaiting_confirm";
+      tabId: number;
+      baseDraft: {
+        request: WalletRequest;
+        origin: string;
+        pageSnapshot: PageSnapshot;
+        chainId: number;
+        decoded: JudgeInput["decoded"];
+        contract: ContractMeta;
+        intent: UserIntent;
+      };
+    }
+  | {
+      phase: "verdict_ready";
+      tabId: number;
+      request: WalletRequest;
+      origin: string;
+      pageSnapshot: PageSnapshot;
+      judgeInput: JudgeInput;
+      verdict: JudgeVerdict;
+    };
 
-async function setPending(item: PendingItem) {
-  await chrome.storage.session.set({ [`pending:${item.id}`]: item, lastPendingId: item.id });
+async function setState(id: string, s: PhaseState) {
+  await chrome.storage.session.set({ [`pending:${id}`]: s, lastPendingId: id });
 }
-async function getPending(id: string): Promise<PendingItem | undefined> {
+async function getState(id: string): Promise<PhaseState | undefined> {
   const r = await chrome.storage.session.get([`pending:${id}`]);
   return r[`pending:${id}`];
 }
-async function clearPending(id: string) {
+async function clearState(id: string) {
   await chrome.storage.session.remove([`pending:${id}`]);
 }
 
@@ -92,63 +106,60 @@ async function callJudge(input: JudgeInput): Promise<JudgeVerdict> {
 }
 
 chrome.runtime.onMessage.addListener((msg: ContentToBackground, sender) => {
-  if (msg.kind !== "judge_request") return;
   (async () => {
-    const tabId = sender.tab?.id;
-    try {
-      if (tabId === undefined) throw new Error("no tab id");
+    if (msg.kind === "judge_request") {
+      const tabId = sender.tab?.id;
+      if (tabId === undefined) return;
       const { request, origin, pageSnapshot } = msg.payload;
 
       if (request.method !== "eth_sendTransaction") {
-        const reply: BackgroundToContent = { kind: "judge_error", id: msg.id, message: "method not supported in M2" };
-        chrome.tabs.sendMessage(tabId, reply);
+        chrome.tabs.sendMessage(tabId, { kind: "judge_error", id: msg.id, message: "method not supported in M2" } as BackgroundToContent);
         return;
       }
       const tx = request.params[0];
-      const chainIdHex = tx.chainId ?? "0x2105";
-      const chainId = parseInt(chainIdHex, 16);
-
+      const chainId = parseInt(tx.chainId ?? "0x2105", 16);
       const decoded = await decode({ chainId, to: tx.to, data: tx.data ?? "0x", value: tx.value ?? "0x0" });
-      const verifiedContract = await fetchVerifiedContract({ chainId, address: tx.to });
-      const sim = await maybeSimulate(chainId, { from: tx.from, to: tx.to, value: tx.value, data: tx.data });
-
+      const v = await fetchVerifiedContract({ chainId, address: tx.to });
       const intent = inferIntent(pageSnapshot);
-      const contract: ContractMeta = {
-        address: tx.to, chainId,
-        verified: verifiedContract.verified,
-        sourceProvider: verifiedContract.verified ? "sourcify" : undefined,
-        contractName: verifiedContract.contractName,
-        isProxy: false,
-      };
-      const originSig: OriginSignals = {
-        url: pageSnapshot.url, origin,
-        pageTitle: pageSnapshot.title, ogTitle: pageSnapshot.ogTitle, ogSiteName: pageSnapshot.ogSiteName,
-        visibleButtonText: pageSnapshot.visibleButtonText,
-      };
-      const findings = deterministicFindings({ decoded, contract, intent });
-      const judgeInput: JudgeInput = { intent, decoded, sim, contract, origin: originSig, findings, request };
+      const contract: ContractMeta = { address: tx.to, chainId, verified: v.verified, sourceProvider: v.verified ? "sourcify" : undefined, contractName: v.contractName, isProxy: false };
 
-      const verdict = await callJudge(judgeInput);
-      await setPending({ id: msg.id, tabId, request, origin, pageSnapshot, judgeInput, verdict });
+      await setState(msg.id, { phase: "awaiting_confirm", tabId, baseDraft: { request, origin, pageSnapshot, chainId, decoded, contract, intent } });
       await chrome.action.openPopup().catch(() => {});
-    } catch (e) {
-      if (tabId !== undefined) {
-        const reply: BackgroundToContent = { kind: "judge_error", id: msg.id, message: String((e as Error).message ?? e) };
-        chrome.tabs.sendMessage(tabId, reply);
-      }
+      return;
     }
-  })();
-  return false;
-});
 
-chrome.runtime.onMessage.addListener((msg: { kind: "user_decision"; id: string; decision: "approve" | "reject" }) => {
-  if (msg.kind !== "user_decision") return;
-  (async () => {
-    const item = await getPending(msg.id);
-    if (!item) return;
-    const reply: BackgroundToContent = { kind: "judge_result", id: msg.id, verdict: item.verdict, userDecision: msg.decision };
-    chrome.tabs.sendMessage(item.tabId, reply);
-    await clearPending(msg.id);
+    if (msg.kind === "user_intent_confirmed") {
+      const s = await getState(msg.id);
+      if (!s || s.phase !== "awaiting_confirm") return;
+      const { baseDraft, tabId } = s;
+      const tx = baseDraft.request.method === "eth_sendTransaction" ? baseDraft.request.params[0] : null;
+      if (!tx) return;
+
+      const sim = await maybeSimulate(baseDraft.chainId, { from: tx.from, to: tx.to, value: tx.value, data: tx.data });
+      const findings = deterministicFindings({ decoded: baseDraft.decoded, contract: baseDraft.contract, intent: msg.intent });
+      const originSig: OriginSignals = {
+        url: baseDraft.pageSnapshot.url, origin: baseDraft.origin,
+        pageTitle: baseDraft.pageSnapshot.title, ogTitle: baseDraft.pageSnapshot.ogTitle, ogSiteName: baseDraft.pageSnapshot.ogSiteName,
+        visibleButtonText: baseDraft.pageSnapshot.visibleButtonText,
+      };
+      const judgeInput: JudgeInput = { intent: msg.intent, decoded: baseDraft.decoded, sim, contract: baseDraft.contract, origin: originSig, findings, request: baseDraft.request };
+      try {
+        const verdict = await callJudge(judgeInput);
+        await setState(msg.id, { phase: "verdict_ready", tabId, request: baseDraft.request, origin: baseDraft.origin, pageSnapshot: baseDraft.pageSnapshot, judgeInput, verdict });
+      } catch (e) {
+        chrome.tabs.sendMessage(tabId, { kind: "judge_error", id: msg.id, message: String((e as Error).message ?? e) } as BackgroundToContent);
+        await clearState(msg.id);
+      }
+      return;
+    }
+
+    if (msg.kind === "user_decision") {
+      const s = await getState(msg.id);
+      if (!s || s.phase !== "verdict_ready") return;
+      chrome.tabs.sendMessage(s.tabId, { kind: "judge_result", id: msg.id, verdict: s.verdict, userDecision: msg.decision } as BackgroundToContent);
+      await clearState(msg.id);
+      return;
+    }
   })();
   return false;
 });
