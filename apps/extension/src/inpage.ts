@@ -1,14 +1,21 @@
 import { IC_PORT, type ContentToInpage, type InpageToContent } from "./shared/messaging";
 
+const MAX_ATTEMPTS = 50;
+
 (function install() {
   const target = (window as any).ethereum;
   if (!target) {
     // Wait for injection: most wallets define window.ethereum after page load.
+    let attempts = 0;
     const i = setInterval(() => {
-      if ((window as any).ethereum) { clearInterval(i); install(); }
+      attempts += 1;
+      if ((window as any).ethereum) { clearInterval(i); install(); return; }
+      if (attempts >= MAX_ATTEMPTS) { clearInterval(i); }
     }, 100);
     return;
   }
+
+  if ((target as any).__intentCheckPatched) return;
 
   const interceptedMethods = new Set([
     "eth_sendTransaction",
@@ -52,5 +59,8 @@ import { IC_PORT, type ContentToInpage, type InpageToContent } from "./shared/me
     return originalRequest(args);
   };
 
-  console.log("[intent-check] window.ethereum patched");
+  (target as any).__intentCheckPatched = true;
+  if ((globalThis as any).__INTENT_CHECK_DEBUG === true) {
+    console.log("[intent-check] window.ethereum patched");
+  }
 })();
