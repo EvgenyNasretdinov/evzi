@@ -20,6 +20,12 @@ importers:
       '@intent-check/decoder':
         specifier: workspace:*
         version: link:../../packages/decoder
+      '@intent-check/sourcify-client':
+        specifier: workspace:*
+        version: link:../../packages/sourcify-client
+      '@intent-check/tenderly-client':
+        specifier: workspace:*
+        version: link:../../packages/tenderly-client
       '@intent-check/types':
         specifier: workspace:*
         version: link:../../packages/types
