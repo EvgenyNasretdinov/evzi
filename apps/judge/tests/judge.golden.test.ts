@@ -28,21 +28,23 @@ describe("/judge golden scenarios", () => {
   it("matched-swap stays SAFE", async () => {
     const a = app({ tier: "SAFE", headline: "Looks safe — swap matches.", reasons: [], confidence: 0.9 });
     const r = await call(a, makeInput());
-    expect((await r.json()).tier).toBe("SAFE");
+    const body = (await r.json()) as JudgeVerdict;
+    expect(body.tier).toBe("SAFE");
   });
 
   it("unverified contract upgrades to CAUTION via floor", async () => {
     const a = app({ tier: "SAFE", headline: "ok", reasons: [], confidence: 0.9 });
     const findings: Finding[] = [{ code: "UNVERIFIED_CONTRACT", severity: "warn", text: "not verified" }];
     const r = await call(a, makeInput({ findings }));
-    expect((await r.json()).tier).toBe("CAUTION");
+    const body = (await r.json()) as JudgeVerdict;
+    expect(body.tier).toBe("CAUTION");
   });
 
   it("unlimited approval gets DANGER even if LLM says SAFE", async () => {
     const a = app({ tier: "SAFE", headline: "ok", reasons: [], confidence: 0.9 });
     const findings: Finding[] = [{ code: "UNLIMITED_APPROVAL", severity: "danger", text: "unlimited approval to 0xabc" }];
     const r = await call(a, makeInput({ findings }));
-    const body = await r.json();
+    const body = (await r.json()) as JudgeVerdict;
     expect(body.tier).toBe("DANGER");
     expect(body.headline.toLowerCase()).toContain("stop");
   });
