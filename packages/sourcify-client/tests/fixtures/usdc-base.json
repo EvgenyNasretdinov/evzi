@@ -1,0 +1,9 @@
+{
+  "status": "perfect",
+  "files": [
+    {
+      "name": "metadata.json",
+      "content": "{\"output\":{\"abi\":[{\"type\":\"function\",\"name\":\"transfer\",\"inputs\":[{\"name\":\"to\",\"type\":\"address\"},{\"name\":\"amount\",\"type\":\"uint256\"}],\"outputs\":[{\"type\":\"bool\"}],\"stateMutability\":\"nonpayable\"}]},\"settings\":{\"compilationTarget\":{\"contracts/USDC.sol\":\"USDC\"}}}"
+    }
+  ]
+}
