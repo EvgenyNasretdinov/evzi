@@ -1,0 +1,21 @@
+{
+  "transaction": {
+    "status": true,
+    "gas_used": 51234,
+    "transaction_info": {
+      "asset_changes": [
+        {
+          "type": "Transfer",
+          "from": "0xaaa0000000000000000000000000000000000001",
+          "to":   "0xbbb0000000000000000000000000000000000002",
+          "raw_amount": "100000000",
+          "token_info": { "contract_address": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913", "symbol": "USDC", "decimals": 6 }
+        }
+      ],
+      "balance_changes": [
+        { "address": "0xaaa0000000000000000000000000000000000001", "delta": "0" }
+      ],
+      "logs": []
+    }
+  }
+}
