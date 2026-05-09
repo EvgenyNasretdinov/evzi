@@ -4,7 +4,7 @@ import type { JudgeVerdict, WalletRequest, UserIntent } from "@intent-check/type
 export const IC_PORT = "intent-check";
 
 export type InpageToContent =
-  | { kind: "wallet_request"; id: string; origin: string; request: WalletRequest }
+  | { kind: "wallet_request"; id: string; origin: string; chainIdHex?: string; request: WalletRequest }
   | { kind: "ping" };
 
 export type ContentToInpage =
@@ -13,7 +13,7 @@ export type ContentToInpage =
 
 // Content-script <-> background messages use chrome.runtime.
 export type ContentToBackground =
-  | { kind: "judge_request"; id: string; tabId?: number; payload: { request: WalletRequest; origin: string; pageSnapshot: PageSnapshot } }
+  | { kind: "judge_request"; id: string; tabId?: number; payload: { request: WalletRequest; origin: string; chainIdHex?: string; pageSnapshot: PageSnapshot } }
   | { kind: "user_intent_confirmed"; id: string; intent: UserIntent }
   | { kind: "user_decision"; id: string; decision: "approve" | "reject" };
 

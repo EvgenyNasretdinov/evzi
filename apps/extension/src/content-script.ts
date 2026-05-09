@@ -1,7 +1,19 @@
 import { IC_PORT, type InpageToContent, type ContentToInpage, type ContentToBackground, type BackgroundToContent, type PageSnapshot } from "./shared/messaging";
 
-// inpage.ts is loaded into the page's MAIN world by the manifest (world: "MAIN" content_scripts entry).
-// We do not inject it here.
+// Inject the inpage proxy synchronously at document_start. The static public/inpage.js
+// is exposed via web_accessible_resources, so its chrome-extension://... URL is fetchable
+// from the page's main world. The script element runs and patches window.ethereum before
+// the dApp's own scripts get a chance to capture it.
+(function injectInpage() {
+  try {
+    const s = document.createElement("script");
+    s.src = chrome.runtime.getURL("inpage.js");
+    s.onload = () => s.remove();
+    (document.head || document.documentElement).appendChild(s);
+  } catch (e) {
+    console.error("[intent-check] failed to inject inpage.js", e);
+  }
+})();
 
 function snapshot(): PageSnapshot {
   const og = (k: string) => document.querySelector<HTMLMetaElement>(`meta[property="og:${k}"]`)?.content;
@@ -21,8 +33,8 @@ window.addEventListener("message", (ev) => {
   const data = (ev.data ?? {}) as { port?: string; payload?: InpageToContent };
   if (data.port !== IC_PORT || !data.payload) return;
   if (data.payload.kind !== "wallet_request") return;
-  const { id, request, origin } = data.payload;
-  const msg: ContentToBackground = { kind: "judge_request", id, payload: { request, origin, pageSnapshot: snapshot() } };
+  const { id, request, origin, chainIdHex } = data.payload;
+  const msg: ContentToBackground = { kind: "judge_request", id, payload: { request, origin, chainIdHex, pageSnapshot: snapshot() } };
   chrome.runtime.sendMessage(msg).catch((e) => {
     const reply: ContentToInpage = { kind: "error", id, message: String(e) };
     window.postMessage({ port: IC_PORT, payload: reply }, "*");

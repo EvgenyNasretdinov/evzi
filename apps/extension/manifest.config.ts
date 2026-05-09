@@ -14,17 +14,9 @@ export default defineManifest({
       run_at: "document_start",
       all_frames: false,
     },
-    // @crxjs types lag: world: "MAIN" supported in MV3 since Chrome 111
-    {
-      matches: ["http://*/*", "https://*/*"],
-      js: ["src/inpage.ts"],
-      run_at: "document_start",
-      all_frames: false,
-      world: "MAIN",
-    } as any,
   ],
   web_accessible_resources: [
-    { resources: ["assets/*"], matches: ["http://*/*", "https://*/*"] },
+    { resources: ["inpage.js", "assets/*"], matches: ["http://*/*", "https://*/*"] },
   ],
   permissions: ["storage", "activeTab", "scripting"],
   host_permissions: ["http://*/*", "https://*/*"],

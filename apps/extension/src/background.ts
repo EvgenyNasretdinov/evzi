@@ -110,14 +110,15 @@ chrome.runtime.onMessage.addListener((msg: ContentToBackground, sender) => {
     if (msg.kind === "judge_request") {
       const tabId = sender.tab?.id;
       if (tabId === undefined) return;
-      const { request, origin, pageSnapshot } = msg.payload;
+      const { request, origin, chainIdHex, pageSnapshot } = msg.payload;
 
       if (request.method !== "eth_sendTransaction") {
         chrome.tabs.sendMessage(tabId, { kind: "judge_error", id: msg.id, message: "method not supported in M2" } as BackgroundToContent);
         return;
       }
       const tx = request.params[0];
-      const chainId = parseInt(tx.chainId ?? "0x2105", 16);
+      // Prefer the wallet's reported chainId; fall back to tx.chainId; default Base.
+      const chainId = parseInt(chainIdHex ?? tx.chainId ?? "0x2105", 16);
       const decoded = await decode({ chainId, to: tx.to, data: tx.data ?? "0x", value: tx.value ?? "0x0" });
       const v = await fetchVerifiedContract({ chainId, address: tx.to });
       const intent = inferIntent(pageSnapshot);
