@@ -82,8 +82,13 @@ const BY_CHAIN: Record<number, Record<string, ProtocolInfo>> = {
  * Returns metadata for a known contract, or null if the address is unrecognized
  * on this chain. Lookup is O(1). Universal addresses (Permit2, Seaport canonical
  * deployments) hit before chain-specific tables.
+ *
+ * Defensive on the address arg: callers occasionally pass an undefined value
+ * after a chrome.storage.session round-trip, and an unhandled .toLowerCase()
+ * on undefined would otherwise take down the whole judging pipeline.
  */
 export function lookupProtocol(chainId: number, address: string): ProtocolInfo | null {
+  if (typeof address !== "string" || address.length === 0) return null;
   const lower = address.toLowerCase();
   const universal = UNIVERSAL[lower];
   if (universal) return universal;

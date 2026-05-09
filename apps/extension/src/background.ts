@@ -207,10 +207,13 @@ function deterministicFindings(input: { decoded: JudgeInput["decoded"]; contract
   // (UR sentinels 0x...0001/0x...0002), or when recipient resolves to the sender.
   if (input.decoded.kind === "swap" && input.from) {
     const sender = input.from.toLowerCase();
-    const recipient = input.decoded.recipient.toLowerCase();
+    // Recipient/router are required by the swap variant, but defend against a
+    // bad serialization round-trip (chrome.storage.session) producing undefined.
+    const recipient = typeof input.decoded.recipient === "string" ? input.decoded.recipient.toLowerCase() : "";
+    const routerAddr = typeof input.decoded.router === "string" ? input.decoded.router.toLowerCase() : "";
     const isProtocolSentinel = input.decoded.recipientKind === "wallet" || input.decoded.recipientKind === "router_self";
-    const isRouterAddr = recipient === input.decoded.router.toLowerCase();
-    if (!isProtocolSentinel && !isRouterAddr && recipient !== sender) {
+    const isRouterAddr = recipient !== "" && recipient === routerAddr;
+    if (recipient !== "" && !isProtocolSentinel && !isRouterAddr && recipient !== sender) {
       out.push({ code: "SWAP_RECIPIENT_MISMATCH", severity: "warn", text: `Swap proceeds go to ${input.decoded.recipient}, not your wallet.` });
     }
   }
@@ -289,9 +292,16 @@ function computeNetEffect(sim: SimResult, wallet: string): { wallet: string; del
   // Map keyed by `${chainId}:${token}` so we accumulate per-asset deltas correctly.
   const acc = new Map<string, NetDelta>();
   for (const c of sim.assetChanges) {
-    const direction = c.to.toLowerCase() === w ? 1 : c.from.toLowerCase() === w ? -1 : 0;
+    // Tenderly returns `from`/`to` as null for native-currency mints/burns and
+    // some bridge events. Guard so the .toLowerCase() doesn't blow up the
+    // entire flow on a single malformed asset_change row.
+    const cTo = typeof c.to === "string" ? c.to.toLowerCase() : "";
+    const cFrom = typeof c.from === "string" ? c.from.toLowerCase() : "";
+    const direction = cTo === w ? 1 : cFrom === w ? -1 : 0;
     if (direction === 0) continue;
-    const key = `${c.token.chainId}:${c.token.address.toLowerCase()}`;
+    const tokenAddr = c.token?.address;
+    if (typeof tokenAddr !== "string") continue;
+    const key = `${c.token.chainId}:${tokenAddr.toLowerCase()}`;
     const prev = acc.get(key);
     const signed = (BigInt(c.token.amount) * BigInt(direction));
     if (prev) {

@@ -25,6 +25,11 @@ export default defineConfig(({ mode }) => {
       "import.meta.env.VITE_TENDERLY_ACCOUNT_SLUG": JSON.stringify(env.TENDERLY_ACCOUNT_SLUG ?? ""),
       "import.meta.env.VITE_TENDERLY_PROJECT_SLUG": JSON.stringify(env.TENDERLY_PROJECT_SLUG ?? ""),
     },
-    build: { rollupOptions: { input: { popup: "src/popup/index.html" } } },
+    // sourcemap=true so background/popup stack traces in the Chrome devtools
+    // point at real source lines (was "background.ts-XXX.js:7:34786" before).
+    build: {
+      sourcemap: true,
+      rollupOptions: { input: { popup: "src/popup/index.html" } },
+    },
   };
 });
