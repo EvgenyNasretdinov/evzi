@@ -135,6 +135,7 @@ export interface AwaitingConfirmState {
     intent: UserIntent;
     pageSnapshot: { title?: string };
     origin: string;
+    clickContext?: { text: string; ariaLabel?: string; sectionHeading?: string };
   };
 }
 
@@ -225,6 +226,7 @@ export function PopupView({ id, state, judgeInfo, onIntentConfirm, onReject, onA
   }
 
   if (state.phase === "awaiting_confirm") {
+    const click = state.baseDraft.clickContext;
     return (
       <div className="w-[380px] bg-background p-3">
         <Card>
@@ -232,7 +234,13 @@ export function PopupView({ id, state, judgeInfo, onIntentConfirm, onReject, onA
             <CardTitle className="text-base">Intent Check</CardTitle>
             <CardDescription className="truncate text-xs">{state.baseDraft.origin}</CardDescription>
           </CardHeader>
-          <CardContent className="pt-0">
+          <CardContent className="space-y-3 pt-0">
+            {click && (
+              <p className="rounded-md border bg-muted/40 p-2 text-xs leading-snug text-muted-foreground">
+                We saw you click <span className="font-medium text-foreground">"{click.text}"</span>
+                {click.sectionHeading ? <> in <span className="font-medium text-foreground">{click.sectionHeading}</span></> : null}.
+              </p>
+            )}
             <IntentConfirm initial={state.baseDraft.intent} onConfirm={(intent) => onIntentConfirm(id, intent)} />
           </CardContent>
           <JudgeInfoFooter info={judgeInfo} />

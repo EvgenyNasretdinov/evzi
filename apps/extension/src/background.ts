@@ -5,7 +5,7 @@ import { simulate } from "@intent-check/tenderly-client";
 import type { JudgeInput, JudgeVerdict, WalletRequest, ContractMeta, OriginSignals, UserIntent, Finding, SimResult, NetDelta } from "@intent-check/types";
 import type { ContentToBackground, BackgroundToContent, PageSnapshot } from "./shared/messaging";
 import {
-  JUDGE_URL, JUDGE_API_KEY,
+  JUDGE_URL, JUDGE_API_KEY, INFER_INTENT_URL,
   TENDERLY_ACCESS_KEY, TENDERLY_ACCOUNT_SLUG, TENDERLY_PROJECT_SLUG,
   CHAIN_ID_TO_NETWORK_ID,
 } from "./shared/config";
@@ -18,6 +18,7 @@ type PhaseState =
         request: WalletRequest;
         origin: string;
         pageSnapshot: PageSnapshot;
+        clickContext?: { text: string; ariaLabel?: string; sectionHeading?: string };
         chainId: number;
         decoded: JudgeInput["decoded"];
         contract: ContractMeta;
@@ -57,6 +58,7 @@ type PhaseState =
         request: WalletRequest;
         origin: string;
         pageSnapshot: PageSnapshot;
+        clickContext?: { text: string; ariaLabel?: string; sectionHeading?: string };
         chainId: number;
         decoded: JudgeInput["decoded"];
         contract: ContractMeta;
@@ -75,18 +77,64 @@ async function clearState(id: string) {
   await chrome.storage.session.remove([`pending:${id}`]);
 }
 
-function inferIntent(snapshot: PageSnapshot): UserIntent {
-  const text = [snapshot.title, snapshot.ogTitle, snapshot.ogSiteName, snapshot.visibleButtonText].filter(Boolean).join(" | ").toLowerCase();
+/**
+ * Regex-based fallback. Used when the /infer-intent endpoint is unavailable
+ * (judge offline, no OpenAI key configured) or as a hint to seed the LLM.
+ */
+function inferIntentRegex(snapshot: PageSnapshot, click?: { text?: string }): UserIntent {
+  const text = [snapshot.title, snapshot.ogTitle, snapshot.ogSiteName, snapshot.visibleButtonText, click?.text].filter(Boolean).join(" | ").toLowerCase();
   // Order matters — earlier matches win. Most specific verbs first.
-  if (/\bswap\b|\btrade\b/.test(text))                   return { kind: "swap",     summary: snapshot.title ?? "Swap on this dApp", confidence: 0.6 };
-  if (/\bapprove\b|\ballow\b/.test(text))                return { kind: "approve",  summary: snapshot.title ?? "Approve token",     confidence: 0.5 };
-  if (/\bmint\b/.test(text))                             return { kind: "mint",     summary: snapshot.title ?? "Mint NFT",          confidence: 0.5 };
+  if (/\bswap\b|\btrade\b/.test(text))                   return { kind: "swap",     summary: click?.text ?? snapshot.title ?? "Swap on this dApp", confidence: 0.6 };
+  if (/\bapprove\b|\ballow\b/.test(text))                return { kind: "approve",  summary: click?.text ?? snapshot.title ?? "Approve token",     confidence: 0.5 };
+  if (/\bmint\b/.test(text))                             return { kind: "mint",     summary: click?.text ?? snapshot.title ?? "Mint NFT",          confidence: 0.5 };
   if (/\bsupply\b|\bdeposit\b|\bstake\b|\blend\b/.test(text))
-                                                         return { kind: "deposit",  summary: snapshot.title ?? "Deposit",           confidence: 0.5 };
-  if (/\bbridge\b/.test(text))                           return { kind: "bridge",   summary: snapshot.title ?? "Bridge",            confidence: 0.5 };
-  if (/\bbuy\b|\bpurchase\b|\bcheckout\b/.test(text))    return { kind: "transfer", summary: snapshot.title ?? "Buy / purchase",    confidence: 0.4 };
-  if (/\bsend\b|\btransfer\b/.test(text))                return { kind: "transfer", summary: snapshot.title ?? "Transfer",          confidence: 0.5 };
-  return { kind: "other", summary: snapshot.title ?? "Unknown action", confidence: 0.2 };
+                                                         return { kind: "deposit",  summary: click?.text ?? snapshot.title ?? "Deposit",           confidence: 0.5 };
+  if (/\bbridge\b/.test(text))                           return { kind: "bridge",   summary: click?.text ?? snapshot.title ?? "Bridge",            confidence: 0.5 };
+  if (/\bbuy\b|\bpurchase\b|\bcheckout\b/.test(text))    return { kind: "transfer", summary: click?.text ?? snapshot.title ?? "Buy / purchase",    confidence: 0.4 };
+  if (/\bsend\b|\btransfer\b/.test(text))                return { kind: "transfer", summary: click?.text ?? snapshot.title ?? "Transfer",          confidence: 0.5 };
+  return { kind: "other", summary: click?.text ?? snapshot.title ?? "Unknown action", confidence: 0.2 };
+}
+
+const INFER_TIMEOUT_MS = 8_000;
+
+/**
+ * Try the LLM-backed /infer-intent first; fall back to regex on any failure.
+ * Total wall time capped at INFER_TIMEOUT_MS so the awaiting-confirm UI never
+ * stalls waiting for a network round-trip.
+ */
+async function inferIntent(args: {
+  snapshot: PageSnapshot;
+  origin: string;
+  clickContext?: { text: string; ariaLabel?: string; sectionHeading?: string };
+  decoded?: { kind: string; protocol?: string; commands?: string[] };
+}): Promise<UserIntent> {
+  const fallback = () => inferIntentRegex(args.snapshot, args.clickContext);
+  try {
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), INFER_TIMEOUT_MS);
+    try {
+      const res = await fetch(INFER_INTENT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": JUDGE_API_KEY },
+        body: JSON.stringify({
+          origin: args.origin,
+          pageTitle: args.snapshot.title,
+          ogTitle: args.snapshot.ogTitle,
+          ogSiteName: args.snapshot.ogSiteName,
+          clickContext: args.clickContext,
+          actionContext: args.snapshot.actionContext,
+          decoded: args.decoded,
+        }),
+        signal: ac.signal,
+      });
+      if (!res.ok) return fallback();
+      return (await res.json()) as UserIntent;
+    } finally {
+      clearTimeout(timer);
+    }
+  } catch {
+    return fallback();
+  }
 }
 
 function deterministicFindings(input: { decoded: JudgeInput["decoded"]; contract: ContractMeta; intent: UserIntent; from?: string }): Finding[] {
@@ -209,7 +257,7 @@ chrome.runtime.onMessage.addListener((msg: ContentToBackground, sender) => {
     if (msg.kind === "judge_request") {
       const tabId = sender.tab?.id;
       if (tabId === undefined) return;
-      const { request, origin, chainIdHex, pageSnapshot } = msg.payload;
+      const { request, origin, chainIdHex, clickContext, pageSnapshot } = msg.payload;
 
       if (request.method !== "eth_sendTransaction") {
         chrome.tabs.sendMessage(tabId, { kind: "judge_error", id: msg.id, message: "method not supported in M2" } as BackgroundToContent);
@@ -221,7 +269,14 @@ chrome.runtime.onMessage.addListener((msg: ContentToBackground, sender) => {
       const decoded = await decode({ chainId, to: tx.to, data: tx.data ?? "0x", value: tx.value ?? "0x0", from: tx.from });
       const v = await fetchVerifiedContract({ chainId, address: tx.to });
       const known = lookupProtocol(chainId, tx.to);
-      const intent = inferIntent(pageSnapshot);
+      const intent = await inferIntent({
+        snapshot: pageSnapshot,
+        origin,
+        clickContext: clickContext ? { text: clickContext.text, ariaLabel: clickContext.ariaLabel, sectionHeading: clickContext.sectionHeading } : undefined,
+        decoded: decoded.kind === "swap"
+          ? { kind: "swap", protocol: decoded.protocol, commands: decoded.commands }
+          : { kind: decoded.kind },
+      });
       const contract: ContractMeta = {
         address: tx.to,
         chainId,
@@ -235,7 +290,8 @@ chrome.runtime.onMessage.addListener((msg: ContentToBackground, sender) => {
         knownProtocol: known ? { protocol: known.protocol, name: known.name, kind: known.kind } : undefined,
       };
 
-      await setState(msg.id, { phase: "awaiting_confirm", tabId, baseDraft: { request, origin, pageSnapshot, chainId, decoded, contract, intent } });
+      const clickCtx = clickContext ? { text: clickContext.text, ariaLabel: clickContext.ariaLabel, sectionHeading: clickContext.sectionHeading } : undefined;
+      await setState(msg.id, { phase: "awaiting_confirm", tabId, baseDraft: { request, origin, pageSnapshot, clickContext: clickCtx, chainId, decoded, contract, intent } });
       await chrome.action.openPopup().catch(() => {});
       return;
     }
@@ -285,7 +341,7 @@ chrome.runtime.onMessage.addListener((msg: ContentToBackground, sender) => {
         // without making the user re-navigate the dApp.
         await setState(msg.id, {
           phase: "error", tabId, origin: draft.origin, message,
-          retryDraft: { request: draft.request, origin: draft.origin, pageSnapshot: draft.pageSnapshot, chainId: draft.chainId, decoded: draft.decoded, contract: draft.contract, intent: msg.intent },
+          retryDraft: { request: draft.request, origin: draft.origin, pageSnapshot: draft.pageSnapshot, clickContext: draft.clickContext, chainId: draft.chainId, decoded: draft.decoded, contract: draft.contract, intent: msg.intent },
         });
         // Best-effort notify the inpage that the request hasn't been answered yet.
         // The user can still hit Retry or Reject from the popup.

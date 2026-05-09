@@ -15,7 +15,7 @@ import { IC_PORT, type InpageToContent, type ContentToInpage, type ContentToBack
   }
 })();
 
-function snapshot(): PageSnapshot {
+function snapshot(actionContext?: PageSnapshot["actionContext"]): PageSnapshot {
   const og = (k: string) => document.querySelector<HTMLMetaElement>(`meta[property="og:${k}"]`)?.content;
   const visibleBtn = document.activeElement instanceof HTMLElement ? document.activeElement.innerText?.trim().slice(0, 80) : undefined;
   return {
@@ -25,6 +25,7 @@ function snapshot(): PageSnapshot {
     ogTitle: og("title"),
     ogSiteName: og("site_name"),
     visibleButtonText: visibleBtn,
+    actionContext,
   };
 }
 
@@ -33,8 +34,8 @@ window.addEventListener("message", (ev) => {
   const data = (ev.data ?? {}) as { port?: string; payload?: InpageToContent };
   if (data.port !== IC_PORT || !data.payload) return;
   if (data.payload.kind !== "wallet_request") return;
-  const { id, request, origin, chainIdHex } = data.payload;
-  const msg: ContentToBackground = { kind: "judge_request", id, payload: { request, origin, chainIdHex, pageSnapshot: snapshot() } };
+  const { id, request, origin, chainIdHex, clickContext, actionContext } = data.payload;
+  const msg: ContentToBackground = { kind: "judge_request", id, payload: { request, origin, chainIdHex, clickContext, pageSnapshot: snapshot(actionContext) } };
   chrome.runtime.sendMessage(msg).catch((e) => {
     const reply: ContentToInpage = { kind: "error", id, message: String(e) };
     window.postMessage({ port: IC_PORT, payload: reply }, "*");
