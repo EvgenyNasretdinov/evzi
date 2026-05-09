@@ -57,6 +57,7 @@ export type PreviewScenario =
   | "awaiting_confirm"
   | "judging_sim"
   | "judging_llm"
+  | "error"
   | "verdict_safe"
   | "verdict_caution"
   | "verdict_danger";
@@ -95,11 +96,24 @@ export function scenarioToHost(scenario: PreviewScenario): { id: string | null; 
           contractName: "UniswapV2Router",
         },
         step: scenario === "judging_sim" ? "fetching_simulation" : "calling_judge",
+        enteredAt: Date.now(),
       },
     };
   }
 
-  const verdicts: Record<Exclude<PreviewScenario, "idle" | "awaiting_confirm" | "judging_sim" | "judging_llm">, JudgeVerdict> = {
+  if (scenario === "error") {
+    return {
+      id: MOCK_ID,
+      state: {
+        phase: "error",
+        origin: "https://app.uniswap.org",
+        message: "judge timeout after 30s",
+        retryDraft: { intent: baseIntent },
+      },
+    };
+  }
+
+  const verdicts: Record<Exclude<PreviewScenario, "idle" | "awaiting_confirm" | "judging_sim" | "judging_llm" | "error">, JudgeVerdict> = {
     verdict_safe: {
       tier: "SAFE",
       headline: "Looks consistent with a normal swap.",

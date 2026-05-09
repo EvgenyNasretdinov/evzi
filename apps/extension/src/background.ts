@@ -33,6 +33,9 @@ type PhaseState =
       contract: ContractMeta;
       // Used by the popup spinner to show partial progress, e.g. "Simulating…".
       step: "fetching_simulation" | "calling_judge";
+      // Wall-clock millisecond timestamp when this step entered. Popup uses it to
+      // detect a stuck state (>60s) and offer a retry without waiting indefinitely.
+      enteredAt: number;
     }
   | {
       phase: "verdict_ready";
@@ -42,6 +45,23 @@ type PhaseState =
       pageSnapshot: PageSnapshot;
       judgeInput: JudgeInput;
       verdict: JudgeVerdict;
+    }
+  | {
+      phase: "error";
+      tabId: number;
+      origin: string;
+      message: string;
+      // Snapshot of the awaiting_confirm state, so the popup's "Retry" button
+      // can re-issue the user_intent_confirmed message without re-decoding.
+      retryDraft?: {
+        request: WalletRequest;
+        origin: string;
+        pageSnapshot: PageSnapshot;
+        chainId: number;
+        decoded: JudgeInput["decoded"];
+        contract: ContractMeta;
+        intent: UserIntent;
+      };
     };
 
 async function setState(id: string, s: PhaseState) {
@@ -156,14 +176,32 @@ async function maybeSimulate(chainId: number, tx: { from: string; to: string; va
   }
 }
 
+const JUDGE_TIMEOUT_MS = 30_000;
+
 async function callJudge(input: JudgeInput): Promise<JudgeVerdict> {
-  const res = await fetch(JUDGE_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-api-key": JUDGE_API_KEY },
-    body: JSON.stringify(input),
-  });
-  if (!res.ok) throw new Error(`judge ${res.status}`);
-  return (await res.json()) as JudgeVerdict;
+  // AbortController prevents a hanging fetch from leaving the popup stuck on
+  // "Asking the agent…" forever. 30s is generous for any LLM round-trip we'd
+  // accept; anything slower is effectively a failure for an interactive flow.
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), JUDGE_TIMEOUT_MS);
+  try {
+    const res = await fetch(JUDGE_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-api-key": JUDGE_API_KEY },
+      body: JSON.stringify(input),
+      signal: ac.signal,
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      throw new Error(`judge ${res.status}${detail ? ` · ${detail.slice(0, 200)}` : ""}`);
+    }
+    return (await res.json()) as JudgeVerdict;
+  } catch (e) {
+    if ((e as Error).name === "AbortError") throw new Error(`judge timeout after ${JUDGE_TIMEOUT_MS / 1000}s`);
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 chrome.runtime.onMessage.addListener((msg: ContentToBackground, sender) => {
@@ -204,40 +242,54 @@ chrome.runtime.onMessage.addListener((msg: ContentToBackground, sender) => {
 
     if (msg.kind === "user_intent_confirmed") {
       const s = await getState(msg.id);
-      if (!s || s.phase !== "awaiting_confirm") return;
-      const { baseDraft, tabId } = s;
-      const tx = baseDraft.request.method === "eth_sendTransaction" ? baseDraft.request.params[0] : null;
+      // Allow re-entry from awaiting_confirm OR from a prior error (retry).
+      const draft = s?.phase === "awaiting_confirm" ? s.baseDraft
+        : s?.phase === "error" && s.retryDraft ? s.retryDraft
+        : null;
+      const tabId = s?.tabId;
+      if (!draft || tabId === undefined) return;
+      const tx = draft.request.method === "eth_sendTransaction" ? draft.request.params[0] : null;
       if (!tx) return;
 
       // Step 1: Tenderly simulation. Show progress so the popup can spin.
       await setState(msg.id, {
         phase: "judging", tabId,
-        origin: baseDraft.origin, intent: msg.intent, decoded: baseDraft.decoded, contract: baseDraft.contract,
+        origin: draft.origin, intent: msg.intent, decoded: draft.decoded, contract: draft.contract,
         step: "fetching_simulation",
+        enteredAt: Date.now(),
       });
-      const sim = await maybeSimulate(baseDraft.chainId, { from: tx.from, to: tx.to, value: tx.value, data: tx.data });
+      const sim = await maybeSimulate(draft.chainId, { from: tx.from, to: tx.to, value: tx.value, data: tx.data });
 
       // Step 2: judge.
       await setState(msg.id, {
         phase: "judging", tabId,
-        origin: baseDraft.origin, intent: msg.intent, decoded: baseDraft.decoded, contract: baseDraft.contract,
+        origin: draft.origin, intent: msg.intent, decoded: draft.decoded, contract: draft.contract,
         step: "calling_judge",
+        enteredAt: Date.now(),
       });
 
-      const findings = deterministicFindings({ decoded: baseDraft.decoded, contract: baseDraft.contract, intent: msg.intent, from: tx.from });
+      const findings = deterministicFindings({ decoded: draft.decoded, contract: draft.contract, intent: msg.intent, from: tx.from });
       const originSig: OriginSignals = {
-        url: baseDraft.pageSnapshot.url, origin: baseDraft.origin,
-        pageTitle: baseDraft.pageSnapshot.title, ogTitle: baseDraft.pageSnapshot.ogTitle, ogSiteName: baseDraft.pageSnapshot.ogSiteName,
-        visibleButtonText: baseDraft.pageSnapshot.visibleButtonText,
+        url: draft.pageSnapshot.url, origin: draft.origin,
+        pageTitle: draft.pageSnapshot.title, ogTitle: draft.pageSnapshot.ogTitle, ogSiteName: draft.pageSnapshot.ogSiteName,
+        visibleButtonText: draft.pageSnapshot.visibleButtonText,
       };
       const netEffect = sim && tx.from ? computeNetEffect(sim, tx.from) : undefined;
-      const judgeInput: JudgeInput = { intent: msg.intent, decoded: baseDraft.decoded, sim, contract: baseDraft.contract, origin: originSig, findings, request: baseDraft.request, netEffect };
+      const judgeInput: JudgeInput = { intent: msg.intent, decoded: draft.decoded, sim, contract: draft.contract, origin: originSig, findings, request: draft.request, netEffect };
       try {
         const verdict = await callJudge(judgeInput);
-        await setState(msg.id, { phase: "verdict_ready", tabId, request: baseDraft.request, origin: baseDraft.origin, pageSnapshot: baseDraft.pageSnapshot, judgeInput, verdict });
+        await setState(msg.id, { phase: "verdict_ready", tabId, request: draft.request, origin: draft.origin, pageSnapshot: draft.pageSnapshot, judgeInput, verdict });
       } catch (e) {
-        chrome.tabs.sendMessage(tabId, { kind: "judge_error", id: msg.id, message: String((e as Error).message ?? e) } as BackgroundToContent);
-        await clearState(msg.id);
+        const message = String((e as Error).message ?? e);
+        // Persist retryDraft so the popup's "Retry" button can re-enter the flow
+        // without making the user re-navigate the dApp.
+        await setState(msg.id, {
+          phase: "error", tabId, origin: draft.origin, message,
+          retryDraft: { request: draft.request, origin: draft.origin, pageSnapshot: draft.pageSnapshot, chainId: draft.chainId, decoded: draft.decoded, contract: draft.contract, intent: msg.intent },
+        });
+        // Best-effort notify the inpage that the request hasn't been answered yet.
+        // The user can still hit Retry or Reject from the popup.
+        chrome.tabs.sendMessage(tabId, { kind: "judge_error", id: msg.id, message } as BackgroundToContent).catch(() => {});
       }
       return;
     }

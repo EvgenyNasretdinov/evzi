@@ -145,6 +145,14 @@ export interface JudgingState {
   decoded: DecodedAction;
   contract: ContractMeta;
   step: "fetching_simulation" | "calling_judge";
+  enteredAt: number;
+}
+
+export interface ErrorState {
+  phase: "error";
+  origin: string;
+  message: string;
+  retryDraft?: { intent: UserIntent };
 }
 
 export interface VerdictReadyState {
@@ -155,7 +163,7 @@ export interface VerdictReadyState {
   pageSnapshot: { title?: string };
 }
 
-export type PopupState = AwaitingConfirmState | JudgingState | VerdictReadyState;
+export type PopupState = AwaitingConfirmState | JudgingState | VerdictReadyState | ErrorState;
 
 function reasonClass(severity: JudgeVerdict["reasons"][number]["severity"]) {
   if (severity === "danger") return "text-destructive";
@@ -237,6 +245,34 @@ export function PopupView({ id, state, judgeInfo, onIntentConfirm, onReject, onA
     const stepLabel = state.step === "fetching_simulation"
       ? "Simulating transaction…"
       : "Asking the agent for a verdict…";
+    // Pop-up safety net: if the background has been in this step for >60s the
+    // service worker is most likely stuck. Surface the same error UI as a
+    // backend-reported failure so the user can retry instead of waiting forever.
+    const stuck = Date.now() - state.enteredAt > 60_000;
+    if (stuck) {
+      return (
+        <div className="w-[380px] bg-background p-3">
+          <Card>
+            <CardHeader className="space-y-1 pb-4">
+              <CardTitle className="text-base">Intent Check</CardTitle>
+              <CardDescription className="truncate text-xs">{state.origin}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 pt-0">
+              <p className="text-sm text-destructive">
+                The check is taking longer than expected. The judge backend may be unavailable.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Confirm the judge dev server is running, then retry.
+              </p>
+              <Button className="w-full" onClick={() => onIntentConfirm(id, state.intent)}>
+                Retry
+              </Button>
+            </CardContent>
+            <JudgeInfoFooter info={judgeInfo} />
+          </Card>
+        </div>
+      );
+    }
     return (
       <div className="w-[380px] bg-background p-3">
         <Card>
@@ -252,6 +288,36 @@ export function PopupView({ id, state, judgeInfo, onIntentConfirm, onReject, onA
             <p className="text-xs text-muted-foreground">
               Intent: <span className="font-medium text-foreground">{state.intent.summary}</span>
             </p>
+          </CardContent>
+          <JudgeInfoFooter info={judgeInfo} />
+        </Card>
+      </div>
+    );
+  }
+
+  if (state.phase === "error") {
+    return (
+      <div className="w-[380px] bg-background p-3">
+        <Card>
+          <CardHeader className="space-y-1 pb-4">
+            <CardTitle className="text-base">Intent Check</CardTitle>
+            <CardDescription className="truncate text-xs">{state.origin}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 pt-0">
+            <p className="text-sm text-destructive">Could not get a verdict.</p>
+            <pre className="whitespace-pre-wrap rounded-md border bg-muted/40 p-2 text-[11px] leading-snug text-muted-foreground">
+              {state.message}
+            </pre>
+            <div className="flex gap-2">
+              {state.retryDraft && (
+                <Button className="flex-1" onClick={() => onIntentConfirm(id, state.retryDraft!.intent)}>
+                  Retry
+                </Button>
+              )}
+              <Button variant="outline" className={state.retryDraft ? "flex-1" : "w-full"} onClick={() => onReject(id)}>
+                Reject request
+              </Button>
+            </div>
           </CardContent>
           <JudgeInfoFooter info={judgeInfo} />
         </Card>

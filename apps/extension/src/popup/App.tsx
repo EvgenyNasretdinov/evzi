@@ -6,6 +6,10 @@ export function App() {
   const [id, setId] = useState<string | null>(null);
   const [state, setState] = useState<PopupState | null>(null);
   const [judgeInfo, setJudgeInfo] = useState<JudgeInfo | null>(null);
+  // tick forces a re-render every 500ms even if storage didn't change. The
+  // judging-stuck guard in PopupView depends on Date.now() vs state.enteredAt;
+  // without this tick a hung background would never trigger the guard.
+  const [, setTick] = useState(0);
 
   const refresh = useCallback(async () => {
     const r = await chrome.storage.session.get(["lastPendingId"]);
@@ -18,7 +22,10 @@ export function App() {
 
   useEffect(() => {
     refresh();
-    const i = setInterval(refresh, 500);
+    const i = setInterval(() => {
+      refresh();
+      setTick((t) => t + 1);
+    }, 500);
     return () => clearInterval(i);
   }, [refresh]);
 
