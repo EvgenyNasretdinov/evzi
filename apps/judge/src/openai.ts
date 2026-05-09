@@ -29,7 +29,13 @@ const VERDICT_SCHEMA = {
 export async function llmJudgeOpenAI(
   input: JudgeInput,
   apiKey: string,
-  model: string = "gpt-5.5",
+  // gpt-5.4 is the default workhorse: top-tier quality with materially faster
+  // first-token latency than gpt-5.5 on heavy payloads (sim data + findings).
+  // The deterministic safety floor + trust ceiling already protect verdict
+  // correctness, so the marginal benefit of gpt-5.5's deeper reasoning isn't
+  // worth the wall-clock variance for an interactive popup.
+  // Override with env OPENAI_MODEL=gpt-5.5 if you want the heavier model.
+  model: string = "gpt-5.4",
 ): Promise<JudgeVerdict> {
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",

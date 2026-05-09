@@ -181,7 +181,8 @@ export function PopupView({ id, state, judgeInfo, onIntentConfirm, onReject, onA
 
   // --- judging: full pipeline checklist + 60s stuck guard ---
   if (state.phase === "judging") {
-    const stuck = Date.now() - state.enteredAt > 60_000;
+    // Reasoning models can take 30-60s on rich payloads. 90s is "really stuck".
+    const stuck = Date.now() - state.enteredAt > 90_000;
     if (stuck) {
       return (
         <div className="w-[380px] bg-transparent p-1.5">
