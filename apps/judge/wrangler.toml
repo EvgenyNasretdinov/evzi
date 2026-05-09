@@ -5,3 +5,4 @@ compatibility_flags = ["nodejs_compat"]
 
 [vars]
 JUDGE_API_KEY = "local-dev-key"
+STUB_VERDICT = "1"
