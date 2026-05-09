@@ -20,6 +20,9 @@ importers:
       '@intent-check/decoder':
         specifier: workspace:*
         version: link:../../packages/decoder
+      '@intent-check/protocol-registry':
+        specifier: workspace:*
+        version: link:../../packages/protocol-registry
       '@intent-check/sourcify-client':
         specifier: workspace:*
         version: link:../../packages/sourcify-client
@@ -130,6 +133,15 @@ importers:
       viem:
         specifier: ^2.21.0
         version: 2.48.11(typescript@5.9.3)(zod@3.22.3)
+    devDependencies:
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@25.6.2)
+
+  packages/protocol-registry:
     devDependencies:
       typescript:
         specifier: ^5.6.0
