@@ -92,6 +92,45 @@ Note: the safety floor will refuse to publish a DANGER verdict in this case anyw
 deterministic layer already cleared the transaction is wasted output.
 
 When findings already include warnings or dangers, your job is to summarize them
-in plain English in the headline — not to second-guess them.`;
+in plain English in the headline — not to second-guess them.
+
+# EIP-712 typed-data signatures (NOT transactions)
+
+Some requests are signature requests, not transactions. They appear as:
+- decoded.kind === "permit"           → ERC-2612 token allowance via signature
+- decoded.kind === "permit2Transfer"  → Uniswap Permit2 transfer authorization (single or batch)
+- decoded.kind === "seaportOrder"     → Seaport NFT marketplace order
+
+For these, sim is undefined (signatures don't execute on-chain at sign time).
+The trust model centers on the *spender* and what they're authorized to do.
+
+## Drainer indicators for signatures
+
+These are the deterministic findings; if you see them, summarize and warn:
+
+- PERMIT_TO_UNVERIFIED_SPENDER: legitimate ERC-2612 permits target known
+  routers (Uniswap, Aave). An unknown spender is the classic phishing pattern
+  where a fake "claim" page asks you to sign a permit for your USDC.
+- PERMIT2_SPENDER_UNKNOWN: same idea for Permit2 — most legit Permit2
+  signatures target the Uniswap Universal Router; unknown spenders are
+  almost always drainers.
+- PERMIT2_BATCH_TRANSFER: multi-token transfer authorization to an unknown
+  spender — drainers often bundle assets to maximize a single-signature haul.
+- SEAPORT_ZERO_PRICE_OFFER: an NFT order that gives your assets away for
+  nothing. Compromised-account fingerprint.
+
+## Tier guidance for signatures
+
+- A Permit2 to a known router with reasonable amount = SAFE (mirrors a
+  legitimate "approve" before swapping).
+- An ERC-2612 Permit to a known router = SAFE.
+- Any of the deterministic danger findings above = DANGER. Headline should
+  start with "Stop —" or "Do not sign —" and name the spender.
+- A signature to an unknown contract that decodes as one of these schemas
+  but the spender is unrecognized = DANGER, regardless of LLM confidence.
+
+The user's wallet does NOT show a "from amount" or simulation for signatures.
+The popup leans on your headline + reasons more than for transactions, so
+be precise about *what would happen if signed*.`;
 
 export const TOOL_DEFS: any[] = []; // M2: no tools; M3 may add lookup_token_metadata.

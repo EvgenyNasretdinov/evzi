@@ -16,7 +16,7 @@ describe("openai client", () => {
     vi.stubGlobal("fetch", vi.fn(async (_url: string, init: RequestInit) => {
       const body = JSON.parse(String(init.body));
       // Sanity check on request shape.
-      expect(body.model).toBe("gpt-5.4");
+      expect(body.model).toBe("gpt-5.5");
       expect(body.response_format.type).toBe("json_schema");
       const verdict = { tier: "SAFE", headline: "ok", reasons: [], confidence: 0.9 };
       const choice = { message: { content: JSON.stringify(verdict) } };

@@ -29,7 +29,7 @@ const VERDICT_SCHEMA = {
 export async function llmJudgeOpenAI(
   input: JudgeInput,
   apiKey: string,
-  model: string = "gpt-5.4",
+  model: string = "gpt-5.5",
 ): Promise<JudgeVerdict> {
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",

@@ -30,7 +30,7 @@ export function mountJudge(app: Hono<any>, optsLike: JudgeOptionsLike) {
     let provider: "stub" | "openai" | "anthropic" | "none";
     let model: string | undefined;
     if (opts.stubVerdict) { provider = "stub"; model = undefined; }
-    else if (opts.openaiApiKey) { provider = "openai"; model = opts.openaiModel ?? "gpt-5.4"; }
+    else if (opts.openaiApiKey) { provider = "openai"; model = opts.openaiModel ?? "gpt-5.5"; }
     else if (opts.anthropicApiKey) { provider = "anthropic"; model = "claude-sonnet-4-6"; }
     else { provider = "none"; model = undefined; }
     return c.json({ provider, model });
