@@ -1,3 +1,5 @@
+@import url("https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,700;1,9..40,400&family=Space+Grotesk:wght@500;600;700&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -54,7 +56,24 @@
     @apply border-border;
   }
 
+  /* Extension popup: no full-window white mat — surface is the elevated panel only. */
+  html,
   body {
-    @apply bg-background text-foreground antialiased;
+    @apply bg-transparent;
+  }
+
+  body {
+    @apply font-sans text-foreground antialiased;
+  }
+
+  #root {
+    @apply bg-transparent;
+  }
+}
+
+/* Floated panel shell; elevation comes from `shadow-popup` (Tailwind). */
+@layer components {
+  .evzi-popup-surface {
+    @apply overflow-hidden rounded-xl border-0 bg-card text-card-foreground;
   }
 }
