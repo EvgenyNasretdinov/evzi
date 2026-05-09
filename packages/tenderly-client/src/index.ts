@@ -10,6 +10,8 @@ export interface SimulateArgs {
   input: string;
   value: string;
   baseUrl?: string;
+  /** Abort the request after this many ms. Default 12_000. */
+  timeoutMs?: number;
 }
 
 interface RawAssetChange {
@@ -23,14 +25,26 @@ interface RawAssetChange {
 export async function simulate(args: SimulateArgs): Promise<SimResult> {
   const baseUrl = args.baseUrl ?? "https://api.tenderly.co";
   const url = `${baseUrl}/api/v1/account/${args.accountSlug}/project/${args.projectSlug}/simulate`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "X-Access-Key": args.accessKey, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      network_id: args.network_id, from: args.from, to: args.to, input: args.input, value: args.value,
-      save: false, simulation_type: "quick",
-    }),
-  });
+  const ac = new AbortController();
+  const timeoutMs = args.timeoutMs ?? 12_000;
+  const timer = setTimeout(() => ac.abort(), timeoutMs);
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: { "X-Access-Key": args.accessKey, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        network_id: args.network_id, from: args.from, to: args.to, input: args.input, value: args.value,
+        save: false, simulation_type: "quick",
+      }),
+      signal: ac.signal,
+    });
+  } catch (e) {
+    clearTimeout(timer);
+    const reason = (e as Error).name === "AbortError" ? `tenderly timeout after ${timeoutMs / 1000}s` : `tenderly ${(e as Error).message}`;
+    return { success: false, failureReason: reason, assetChanges: [], balanceChanges: [], gasUsed: "0", logs: [] };
+  }
+  clearTimeout(timer);
   if (!res.ok) {
     return { success: false, failureReason: `tenderly ${res.status}`, assetChanges: [], balanceChanges: [], gasUsed: "0", logs: [] };
   }
