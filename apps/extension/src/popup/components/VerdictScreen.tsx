@@ -71,8 +71,16 @@ export function VerdictScreen({
   }
 
   return (
-    <section className={cn("evzi-popup-surface shadow-popup w-full max-w-[420px]", className)}>
-      <header className="flex items-center justify-between px-6 py-4">
+    <section
+      className={cn(
+        // h-[580px] fits inside Chrome MV3's ~600px popup window ceiling. The
+        // flex column lets us pin the action buttons in a sticky footer so a
+        // long checklist can't push Sign/Reject off the visible window.
+        "evzi-popup-surface shadow-popup flex h-[580px] max-h-[580px] w-full max-w-[420px] flex-col overflow-hidden",
+        className
+      )}
+    >
+      <header className="flex shrink-0 items-center justify-between px-6 py-4">
         <EvziEyeLogo status={eyeStatus} />
         {onClose ? (
           <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-foreground/70" onClick={onClose} aria-label="Close">
@@ -83,9 +91,12 @@ export function VerdictScreen({
         )}
       </header>
 
-      <EvziStatusStripe status={eyeStatus} />
+      <EvziStatusStripe status={eyeStatus} className="shrink-0" />
 
-      <div className="space-y-0">
+      {/* Scrollable middle: title, Talk-to-Evzi, checklist, raw data toggle.
+       * Action buttons are pinned in the footer below so they're always
+       * reachable regardless of how long the checklist gets. */}
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         {/* Screen 1: Evzi message + Talk to Evzi */}
         <div className="flex flex-col gap-6 px-6 py-6">
           <div className="space-y-2">
@@ -107,7 +118,7 @@ export function VerdictScreen({
 
         <Separator />
 
-        {/* Screens 2–3: one bordered block, dividers between rows + full-width action column */}
+        {/* Screen 2: the checklist itself (action buttons moved to sticky footer) */}
         <div className="flex flex-col gap-6 px-6 py-6">
           <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-background">
             {checklist.map((row, i) => (
@@ -126,19 +137,6 @@ export function VerdictScreen({
               </li>
             ))}
           </ul>
-
-          <div className="flex w-full flex-col gap-2">
-            <Button
-              type="button"
-              className="h-9 w-full rounded-md bg-[#171717] text-sm font-medium text-[#fafafa] shadow-sm hover:bg-[#171717]/90"
-              onClick={onPrimary}
-            >
-              {primaryLabel}
-            </Button>
-            <Button type="button" variant="outline" className="h-9 w-full rounded-md border-border text-sm font-medium shadow-sm" onClick={onSecondary}>
-              {secondaryLabel}
-            </Button>
-          </div>
         </div>
 
         <Separator />
@@ -184,13 +182,29 @@ export function VerdictScreen({
             </div>
           </Collapsible>
         </div>
-
-        {footerLabel && (
-          <p className="border-t bg-muted/20 px-4 py-2 text-[10px] uppercase tracking-wide text-muted-foreground">
-            {footerLabel}
-          </p>
-        )}
       </div>
+
+      {/* Sticky footer: action buttons + optional judge label. Always reachable. */}
+      <div className="shrink-0 border-t border-border bg-card px-6 py-4">
+        <div className="flex w-full flex-col gap-2">
+          <Button
+            type="button"
+            className="h-9 w-full rounded-md bg-[#171717] text-sm font-medium text-[#fafafa] shadow-sm hover:bg-[#171717]/90"
+            onClick={onPrimary}
+          >
+            {primaryLabel}
+          </Button>
+          <Button type="button" variant="outline" className="h-9 w-full rounded-md border-border text-sm font-medium shadow-sm" onClick={onSecondary}>
+            {secondaryLabel}
+          </Button>
+        </div>
+      </div>
+
+      {footerLabel && (
+        <p className="shrink-0 border-t bg-muted/20 px-4 py-2 text-[10px] uppercase tracking-wide text-muted-foreground">
+          {footerLabel}
+        </p>
+      )}
     </section>
   );
 }

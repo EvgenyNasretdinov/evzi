@@ -122,7 +122,10 @@ export function ConfirmIntentScreen({
   return (
     <section
       className={cn(
-        "evzi-popup-surface shadow-popup flex max-h-[640px] w-full max-w-[420px] flex-col overflow-hidden",
+        // h-[580px] (not max-h) so the flex column has a real fixed height and
+        // the footer is structurally pinned. 580 fits inside Chrome MV3's
+        // ~600px popup window ceiling — go higher and the footer gets clipped.
+        "evzi-popup-surface shadow-popup flex h-[580px] max-h-[580px] w-full max-w-[420px] flex-col overflow-hidden",
         className
       )}
     >

@@ -100,7 +100,9 @@ export function ChatScreen({ onBack, onClose, initialMessages, sendMessage, clas
   return (
     <section
       className={cn(
-        "evzi-popup-surface shadow-popup flex h-[640px] max-h-[640px] w-full max-w-[420px] flex-col overflow-hidden",
+        // h-[580px] fits inside Chrome MV3's ~600px popup window ceiling. Going
+        // higher clips the bottom of the chat — exactly where the input sits.
+        "evzi-popup-surface shadow-popup flex h-[580px] max-h-[580px] w-full max-w-[420px] flex-col overflow-hidden",
         className
       )}
     >
