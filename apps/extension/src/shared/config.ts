@@ -2,6 +2,7 @@ export const JUDGE_BASE_URL = "http://127.0.0.1:8787";
 export const JUDGE_URL = `${JUDGE_BASE_URL}/judge`;
 export const JUDGE_INFO_URL = `${JUDGE_BASE_URL}/judge/info`;
 export const INFER_INTENT_URL = `${JUDGE_BASE_URL}/infer-intent`;
+export const CHAT_URL = `${JUDGE_BASE_URL}/chat`;
 export const JUDGE_API_KEY = "local-dev-key";
 export const SUPPORTED_CHAIN_IDS = [1, 8453, 10, 42161];
 

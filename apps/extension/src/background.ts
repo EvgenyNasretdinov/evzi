@@ -4,9 +4,9 @@ import { lookupProtocol } from "@intent-check/protocol-registry";
 import { fetchVerifiedContract } from "@intent-check/sourcify-client";
 import { simulate } from "@intent-check/tenderly-client";
 import type { JudgeInput, JudgeVerdict, WalletRequest, ContractMeta, OriginSignals, UserIntent, Finding, SimResult, NetDelta } from "@intent-check/types";
-import type { ContentToBackground, BackgroundToContent, PageSnapshot } from "./shared/messaging";
+import type { ContentToBackground, BackgroundToContent, PageSnapshot, PopupToBackground, ChatSendResponse } from "./shared/messaging";
 import {
-  JUDGE_URL, JUDGE_API_KEY, INFER_INTENT_URL,
+  JUDGE_URL, JUDGE_API_KEY, INFER_INTENT_URL, CHAT_URL,
   TENDERLY_ACCESS_KEY, TENDERLY_ACCOUNT_SLUG, TENDERLY_PROJECT_SLUG,
   CHAIN_ID_TO_NETWORK_ID,
 } from "./shared/config";
@@ -602,4 +602,46 @@ chrome.runtime.onMessage.addListener((msg: ContentToBackground, sender) => {
     }
   })();
   return false;
+});
+
+// ---- Chat: popup → background → /chat ----
+//
+// Separate listener (not part of the ContentToBackground union) because chat
+// uses request/response (sendResponse callback) rather than fire-and-forget.
+
+const CHAT_TIMEOUT_MS = 45_000;
+
+async function callChat(payload: PopupToBackground & { kind: "chat_send" }): Promise<ChatSendResponse> {
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), CHAT_TIMEOUT_MS);
+  try {
+    const res = await fetch(CHAT_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-api-key": JUDGE_API_KEY },
+      body: JSON.stringify({ messages: payload.messages, context: payload.context }),
+      signal: ac.signal,
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      return { ok: false, error: `chat ${res.status}${detail ? ` · ${detail.slice(0, 200)}` : ""}` };
+    }
+    const body = (await res.json()) as { reply?: string };
+    if (typeof body.reply !== "string" || body.reply.length === 0) {
+      return { ok: false, error: "chat: empty reply" };
+    }
+    return { ok: true, reply: body.reply };
+  } catch (e) {
+    if ((e as Error).name === "AbortError") return { ok: false, error: `chat timeout after ${CHAT_TIMEOUT_MS / 1000}s` };
+    return { ok: false, error: String((e as Error).message ?? e) };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+chrome.runtime.onMessage.addListener((msg: PopupToBackground, _sender, sendResponse) => {
+  if (msg.kind !== "chat_send") return false;
+  callChat(msg).then((response) => {
+    sendResponse(response);
+  });
+  return true; // keep the message channel open for the async response
 });

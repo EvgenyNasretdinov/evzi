@@ -1,5 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
-import { PopupView, type PopupState, type JudgeInfo } from "./PopupView";
+import { PopupView, type PopupState, type JudgeInfo, type ChatContext } from "./PopupView";
+import type { ChatMessage } from "./chat/types";
+import type { ChatSendResponse } from "../shared/messaging";
 import { JUDGE_INFO_URL } from "../shared/config";
 
 export function App() {
@@ -39,11 +41,30 @@ export function App() {
     return () => { cancelled = true; };
   }, []);
 
+  /**
+   * Chat dispatcher — bridges the in-popup ChatScreen to the background's
+   * /chat fetch. Strips ChatMessage to the wire shape (drops id, createdAt)
+   * since the LLM only cares about role+content.
+   */
+  const onChatSend = useCallback(async (messages: ChatMessage[], context?: ChatContext): Promise<string> => {
+    const wire = messages.map((m) => ({ role: m.role, content: m.content }));
+    const response = await chrome.runtime.sendMessage({
+      kind: "chat_send",
+      messages: wire,
+      context,
+    }) as ChatSendResponse;
+    if (!response || !response.ok) {
+      throw new Error(response?.error ?? "chat: no response");
+    }
+    return response.reply;
+  }, []);
+
   return (
     <PopupView
       id={id}
       state={state}
       judgeInfo={judgeInfo}
+      onChatSend={onChatSend}
       onIntentConfirm={(requestId, intent) =>
         void chrome.runtime.sendMessage({ kind: "user_intent_confirmed", id: requestId, intent })
       }

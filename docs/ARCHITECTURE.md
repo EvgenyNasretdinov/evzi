@@ -1,8 +1,9 @@
 # Evzi — Architecture
 
-Last updated for the state at branch `intent-check-mvp` after the M3a/M3b/M3c/M3d
-work plus Aave v3 support and the designer's UI overhaul (`ConfirmIntentScreen`,
-`VerdictScreen`, `EvziEyeLogo`). HEAD: `e19afd1`.
+Last updated for the state at `main` after M3e — Talk-to-Evzi chat overlay
+wired to a `/chat` endpoint on the judge backend, plus the designer's branded
+idle screen + animated wordmark + chat UI from
+`feature/extension-shadcn-ui-preview`.
 
 This document is the entry point for engineers and AI agents joining the
 project. It explains:
@@ -87,18 +88,25 @@ DANGER on a hunch.
    ┌──────────────────│─────────────────────────────────│──┐
    │ popup (React + shadcn/ui)                          │  │
    │   PopupView reads chrome.storage.session, polling  │  │
+   │   IdleScreen (animated eye + "Talk to Evzi")       │  │
    │   ConfirmIntentScreen (kind + summary + concern)   │  │
    │   ProgressList during judging (5-step pipeline)    │  │
    │   VerdictScreen (eye, title, checklist, raw data)  │  │
+   │   ChatScreen overlay (any phase)                   │  │
+   │     ├─ general mode (no context)                   │  │
+   │     └─ verdict-aware mode (judgeInput + verdict)   │  │
    └────────────────────────────────────────────────────│──┘
                                                         │
-                            HTTP POST /judge            │
+                            HTTP POST /judge, /chat     │
    ┌────────────────────────────────────────────────────▼──┐
    │ apps/judge (Hono on Cloudflare Workers / Node)        │
    │                                                        │
    │   GET  /judge/info     → { provider, model }          │
    │   POST /infer-intent   → UserIntent (gpt-5-mini/5.1)  │
    │   POST /judge          → JudgeVerdict                 │
+   │   POST /chat           → ChatReply (verdict-aware     │
+   │                          when context supplied,       │
+   │                          else general teaching mode)  │
    │                                                        │
    │   Provider dispatch:                                  │
    │   ├── llmJudgeOpenAI()   default gpt-5.4              │
@@ -136,8 +144,13 @@ intent-check/
 │   │   │   │   ├── components/
 │   │   │   │   │   ├── ConfirmIntentScreen.tsx  # designer's confirm screen (summary-first)
 │   │   │   │   │   ├── VerdictScreen.tsx        # designer's verdict screen + checklist
-│   │   │   │   │   ├── EvziEyeLogo.tsx          # branded iris logo
+│   │   │   │   │   ├── IdleScreen.tsx           # branded idle ("Talk to Evzi")
+│   │   │   │   │   ├── ChatScreen.tsx           # conversational overlay
+│   │   │   │   │   ├── AnimatedEye.tsx          # 15s SVG keyframe iris
+│   │   │   │   │   ├── EvziIdleEye.tsx          # AnimatedEye at idle size
+│   │   │   │   │   ├── EvziEyeLogo.tsx          # branded iris logo (inline)
 │   │   │   │   │   └── VerdictChip.tsx
+│   │   │   │   ├── chat/types.ts                # ChatMessage + demo seed
 │   │   │   │   ├── verdict/verdictContent.ts    # builds checklist from JudgeInput
 │   │   │   │   └── lib/decodedDisplay.ts
 │   │   │   └── shared/
@@ -149,10 +162,11 @@ intent-check/
 │   ├── judge/                      # Hono backend (Cloudflare Workers default)
 │   │   ├── src/
 │   │   │   ├── index.ts            # Worker entry (env wiring)
-│   │   │   ├── judge.ts            # mountJudge — /judge, /judge/info, /infer-intent
+│   │   │   ├── judge.ts            # mountJudge — /judge, /judge/info, /infer-intent, /chat
 │   │   │   ├── safetyFloor.ts      # post-LLM enforcement (floor + ceiling)
 │   │   │   ├── prompt.ts           # system prompt (UR conventions, drainers, origin findings)
 │   │   │   ├── inferIntent.ts      # LLM-driven intent inference (cheap model)
+│   │   │   ├── chat.ts             # /chat handler — general + verdict-aware modes
 │   │   │   ├── openai.ts           # OpenAI Chat Completions client (json_schema strict)
 │   │   │   └── anthropic.ts        # Anthropic SDK wrapper
 │   │   ├── tests/
@@ -295,6 +309,66 @@ Two-way enforcement of the deterministic→LLM relationship:
 CAUTION is the only tier that survives both escalation and softening — so the
 LLM is most useful when it has a real caution-worthy observation that the
 deterministic layer didn't catch.
+
+---
+
+## Talk-to-Evzi chat (`/chat`)
+
+The popup ships a chat overlay — opened from the idle screen, the confirm
+screen, or the verdict screen. It runs through the same backend as the
+verdict, so the user can ask follow-up questions and the model can ground its
+answer in the data we already collected.
+
+### Two modes, decided by the popup
+
+| Source screen | Context sent | System prompt | Use-case |
+|---|---|---|---|
+| Idle | none | base | General Web3 safety teaching |
+| Confirm | `{ origin }` | base | "What does this dApp typically do?" |
+| Verdict | `{ origin, judgeInput, verdict }` | base + verdict addendum | "Why did Evzi flag this?" |
+
+The popup captures the right context per source screen in `PopupView.openChat`.
+Switching screens (e.g. verdict → confirm by user back-navigation) replaces
+the captured context for the next chat session.
+
+### Wire path
+
+```
+ChatScreen.sendMessage(messages[])
+  → App.onChatSend(messages, ChatContext)
+  → chrome.runtime.sendMessage({ kind: "chat_send", messages, context })
+  → background.callChat(payload) — POST /chat with x-api-key, 45s AbortController
+  → judge.ts /chat handler
+      → buildSystemPrompt(context)         (base or base + verdict addendum)
+      → contextBlock(context)              compact JSON, prepended to first user turn
+      → chatWithOpenAI / chatWithAnthropic
+  → ChatReply { reply }
+  → ChatScreen appends as assistant turn
+```
+
+If the backend errors, the ChatScreen falls back to a placeholder reply
+(`EVZI_CHAT_PLACEHOLDER_REPLY`) so the conversation keeps flowing locally.
+
+### Why context goes inside the user turn, not as a system turn
+
+Both providers cache the system prompt across requests. Putting the
+JudgeInput inside system would invalidate that cache on every chat (the
+JudgeInput is unique per transaction). Prepending it to the first user
+message instead keeps the cached system prompt warm and still gives the
+model ground truth.
+
+### Reply budget
+
+OpenAI: `max_completion_tokens: 1200` (gpt-5.x reasoning headroom for a
+~5-sentence reply). Anthropic: `max_tokens: 1024`. The popup chat panel is
+420×640; long replies scroll badly, so the system prompt also caps voice at
+about 4-5 sentences unless the user asks for more.
+
+### Auth
+
+Same `x-api-key` as `/judge` — `JUDGE_API_KEY` from `apps/judge/.dev.vars`,
+matched against the extension's hardcoded `local-dev-key` for local dev.
+Production will move both behind a proper key.
 
 ---
 
@@ -462,10 +536,12 @@ for local dev, replace with backend proxy before any production build.
   `LLM_PROVIDER` env switch.
 - LLM-driven `/infer-intent` endpoint (cheap model) for high-quality
   default intent summaries.
+- Talk-to-Evzi chat overlay (`/chat`) — general teaching mode + verdict-
+  aware mode; picks up the JudgeInput + verdict the user just saw.
 - Two-way safety floor / trust ceiling.
 - Token-decimals formatting in net-effect display.
 - Demo phishing scenarios at `apps/demo-pages/`.
-- ~94 tests across 7 packages.
+- 36 judge tests + ~94 tests across the rest of the workspace.
 
 **Next milestones (post-hackathon stretch):**
 - M2.9 — auto-ingest from `@uniswap/contracts` deployments JSON + DefiLlama.

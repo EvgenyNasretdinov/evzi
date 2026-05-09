@@ -4,6 +4,7 @@ import { applySafetyFloor } from "./safetyFloor";
 import { llmJudge } from "./anthropic";
 import { llmJudgeOpenAI } from "./openai";
 import { inferIntentLLM, type InferIntentInput } from "./inferIntent";
+import { chatWithAnthropic, chatWithOpenAI, type ChatRequest, type ChatReply } from "./chat";
 
 export interface JudgeOptions {
   stubVerdict?: boolean;
@@ -17,6 +18,7 @@ export interface JudgeOptions {
   apiKey?: string;
   llmOverride?: (input: JudgeInput) => Promise<JudgeVerdict>; // for tests
   inferIntentOverride?: (input: InferIntentInput) => Promise<UserIntent>; // for tests
+  chatOverride?: (request: ChatRequest) => Promise<ChatReply>; // for tests
 }
 
 /**
@@ -72,6 +74,39 @@ export function mountJudge(app: Hono<any>, optsLike: JudgeOptionsLike) {
       return c.json(intent);
     } catch (e) {
       return c.json({ error: "infer_failed", message: String((e as Error).message ?? e) }, 502);
+    }
+  });
+
+  app.post("/chat", async (c) => {
+    const opts = resolveOpts(c, optsLike);
+    const apiKey = opts.apiKey;
+    if (!apiKey) return c.json({ error: "judge_api_key_unconfigured" }, 500);
+    if (c.req.header("x-api-key") !== apiKey) return c.json({ error: "unauthorized" }, 401);
+
+    let request: ChatRequest;
+    try { request = (await c.req.json()) as ChatRequest; }
+    catch { return c.json({ error: "invalid_json" }, 400); }
+
+    if (!Array.isArray(request.messages) || request.messages.length === 0) {
+      return c.json({ error: "no_messages", message: "messages must be a non-empty array" }, 400);
+    }
+
+    if (opts.chatOverride) {
+      try { return c.json(await opts.chatOverride(request)); }
+      catch (e) { return c.json({ error: "chat_failed", message: String((e as Error).message ?? e) }, 502); }
+    }
+
+    try {
+      const provider = pickProvider(opts);
+      if (provider === "none") {
+        return c.json({ error: "no_llm_key", message: "Set OPENAI_API_KEY or ANTHROPIC_API_KEY." }, 500);
+      }
+      const reply = provider === "openai"
+        ? await chatWithOpenAI(request, { apiKey: opts.openaiApiKey!, model: opts.openaiModel })
+        : await chatWithAnthropic(request, { apiKey: opts.anthropicApiKey!, model: opts.anthropicModel });
+      return c.json(reply);
+    } catch (e) {
+      return c.json({ error: "chat_failed", message: String((e as Error).message ?? e) }, 502);
     }
   });
 

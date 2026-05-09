@@ -104,6 +104,33 @@ and surfaces the outcome in the popup so the user sees what happened.
 - **Multi-asset wrap-swap-unwrap on Uniswap** — looks "complex" to a
   naïve LLM but is the most common Uniswap flow. The agent knows.
 
+## Talk to Evzi (chat)
+
+Every screen in the popup has a **Talk to Evzi** button. The chat overlay
+is the teaching surface — it's where Evzi stops being a black-box "SAFE /
+CAUTION / DANGER" oracle and starts being a personal Web3 analyst the user
+can actually ask questions of.
+
+It runs in two modes, and the popup picks automatically:
+
+- **Verdict-aware mode** — opened from the verdict screen. Evzi receives the
+  full `JudgeInput` (decoded action, simulation, findings, origin) and the
+  verdict the user just saw. Replies cite the specific reasons: *"The
+  Permit2 batch transfer would let `0xdEaD…` move 3 of your tokens with
+  just a signature — no on-chain transaction. That's why it's DANGER."*
+- **General mode** — opened from the idle screen. Evzi has no transaction
+  context and answers as a Web3 safety teacher: *"What's an approval?"*,
+  *"How do drainers usually work?"*, *"What does it mean that a contract
+  isn't verified on Sourcify?"*
+
+Why this matters: the verdict is one screen the user looks at for two
+seconds before they sign. The chat is where they can learn *why* — once,
+properly — and never make that class of mistake again. We treat security
+as something to teach, not just gate.
+
+The model has no live tools (no on-chain reads, no web search) and is told
+not to recommend "sign / reject" — that's always the user's call.
+
 ## What's out of scope
 
 - Protocol-economic attacks (MEV, oracle manipulation, slippage parameter

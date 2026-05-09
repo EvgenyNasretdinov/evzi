@@ -1,4 +1,16 @@
-import type { JudgeVerdict, WalletRequest, UserIntent } from "@intent-check/types";
+import type { JudgeInput, JudgeVerdict, WalletRequest, UserIntent } from "@intent-check/types";
+
+/** Popup chat message — wire shape, mirrors @intent-check/types optional fields. */
+export interface ChatMessageWire {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface ChatContextWire {
+  judgeInput?: JudgeInput;
+  verdict?: JudgeVerdict;
+  origin?: string;
+}
 
 // Inpage <-> content-script messages travel via window.postMessage with a marker.
 export const IC_PORT = "intent-check";
@@ -34,6 +46,14 @@ export type ContentToBackground =
 export type BackgroundToContent =
   | { kind: "judge_result"; id: string; verdict: JudgeVerdict; userDecision: "approve" | "reject" }
   | { kind: "judge_error"; id: string; message: string };
+
+// Popup <-> background. Request/response over chrome.runtime.sendMessage.
+export type PopupToBackground =
+  | { kind: "chat_send"; messages: ChatMessageWire[]; context?: ChatContextWire };
+
+export type ChatSendResponse =
+  | { ok: true; reply: string }
+  | { ok: false; error: string };
 
 export interface PageSnapshot {
   url: string;
