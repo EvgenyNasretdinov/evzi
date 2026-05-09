@@ -9,12 +9,12 @@ import { cn } from "@/lib/utils";
 
 function RowIcon({ row }: { row: VerdictChecklistRow }) {
   if (row.severity === "pass") {
-    return <CheckCircle2 className="h-4 w-4 shrink-0 text-[#29A383]" aria-hidden />;
+    return <CheckCircle2 className="h-4 w-4 shrink-0 text-[#4ACDAA]" aria-hidden />;
   }
   if (row.severity === "caution") {
-    return <AlertTriangle className="h-4 w-4 shrink-0 text-[#FFBE3B]" aria-hidden />;
+    return <AlertTriangle className="h-4 w-4 shrink-0 text-[#FFCD69]" aria-hidden />;
   }
-  return <CircleAlert className="h-4 w-4 shrink-0 text-[#E5484D]" aria-hidden />;
+  return <CircleAlert className="h-4 w-4 shrink-0 text-[#F77579]" aria-hidden />;
 }
 
 export interface VerdictScreenProps {
@@ -144,7 +144,7 @@ export function VerdictScreen({
         <Separator />
 
         {/* Screens 4–5: Raw data — hug-content toggle + copy; no outer section border */}
-        <div className="px-6 py-6">
+        <div className="px-6 py-4">
           <Collapsible open={rawOpen} onOpenChange={setRawOpen}>
             <div>
               <div className="flex items-center justify-between gap-2">

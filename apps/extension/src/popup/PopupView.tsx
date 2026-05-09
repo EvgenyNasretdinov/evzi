@@ -1,6 +1,10 @@
-import { AlertTriangle, CheckCircle2, Circle, CircleAlert, Loader2, MinusCircle, Shield } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { AlertTriangle, CheckCircle2, Circle, CircleAlert, Loader2, MinusCircle } from "lucide-react";
+import { ChatScreen } from "./components/ChatScreen";
 import { ConfirmIntentScreen } from "./components/ConfirmIntentScreen";
+import { IdleScreen } from "./components/IdleScreen";
 import { VerdictScreen } from "./components/VerdictScreen";
+import { CHAT_DEMO_MESSAGES, type ChatMessage } from "@/popup/chat/types";
 import type { JudgeVerdict, DecodedAction, UserIntent, JudgeInput, ContractMeta } from "@intent-check/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -35,6 +39,59 @@ export interface JudgingState {
   steps: JudgingStep[];
   enteredAt: number;
 }
+
+export interface ErrorState {
+  phase: "error";
+  origin: string;
+  message: string;
+  retryDraft?: { intent: UserIntent };
+}
+
+export interface VerdictReadyState {
+  phase: "verdict_ready";
+  verdict: JudgeVerdict;
+  judgeInput: JudgeInput;
+  origin: string;
+  pageSnapshot: { title?: string };
+}
+
+export type PopupState = AwaitingConfirmState | JudgingState | VerdictReadyState | ErrorState;
+
+export interface JudgeInfo {
+  provider: "stub" | "openai" | "anthropic" | "none";
+  model?: string;
+}
+
+/** Context the chat carries when opened from a screen that has verdict data. */
+export interface ChatContext {
+  judgeInput?: JudgeInput;
+  verdict?: JudgeVerdict;
+  origin?: string;
+}
+
+export interface PopupViewProps {
+  id: string | null;
+  state: PopupState | null;
+  judgeInfo?: JudgeInfo | null;
+  onIntentConfirm: (id: string, intent: UserIntent) => void;
+  onReject: (id: string) => void;
+  onApprove: (id: string) => void;
+  onTalkToEvzi?: () => void;
+  /**
+   * Send a chat message to the agent. Receives the full thread + the context
+   * the chat opened with (verdict, judgeInput, origin) so the backend can
+   * tailor its reply. Resolves with the assistant's reply text.
+   *
+   * When omitted (e.g., the design preview), ChatScreen falls back to a
+   * canned placeholder reply.
+   */
+  onChatSend?: (messages: ChatMessage[], context?: ChatContext) => Promise<string>;
+  /** Preview: increment to open chat; use with `chatPreviewMode`. */
+  chatPreviewTrigger?: number;
+  chatPreviewMode?: "empty" | "demo";
+}
+
+// --- step list helpers ---
 
 function StepIcon({ step }: { step: JudgingStep }) {
   if (step.status === "running") return <Loader2 className="h-4 w-4 shrink-0 animate-spin text-primary" aria-hidden />;
@@ -77,38 +134,6 @@ function ProgressList({ steps }: { steps: JudgingStep[] }) {
   );
 }
 
-export interface ErrorState {
-  phase: "error";
-  origin: string;
-  message: string;
-  retryDraft?: { intent: UserIntent };
-}
-
-export interface VerdictReadyState {
-  phase: "verdict_ready";
-  verdict: JudgeVerdict;
-  judgeInput: JudgeInput;
-  origin: string;
-  pageSnapshot: { title?: string };
-}
-
-export type PopupState = AwaitingConfirmState | JudgingState | VerdictReadyState | ErrorState;
-
-export interface JudgeInfo {
-  provider: "stub" | "openai" | "anthropic" | "none";
-  model?: string;
-}
-
-export interface PopupViewProps {
-  id: string | null;
-  state: PopupState | null;
-  judgeInfo?: JudgeInfo | null;
-  onIntentConfirm: (id: string, intent: UserIntent) => void;
-  onReject: (id: string) => void;
-  onApprove: (id: string) => void;
-  onTalkToEvzi?: () => void;
-}
-
 function JudgeInfoFooter({ info }: { info?: JudgeInfo | null }) {
   if (!info) return null;
   let label: string;
@@ -135,28 +160,80 @@ function aiMessageFromClick(click?: { text: string; sectionHeading?: string }) {
 }
 
 /** Shared popup UI used by the extension and the web preview dev server. */
-export function PopupView({ id, state, judgeInfo, onIntentConfirm, onReject, onApprove, onTalkToEvzi }: PopupViewProps) {
+export function PopupView({
+  id,
+  state,
+  judgeInfo,
+  onIntentConfirm,
+  onReject,
+  onApprove,
+  onTalkToEvzi,
+  onChatSend,
+  chatPreviewTrigger = 0,
+  chatPreviewMode = "empty",
+}: PopupViewProps) {
+  // Chat overlay state — when open, takes precedence over every other phase.
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatSessionId, setChatSessionId] = useState(0);
+  const [chatSeed, setChatSeed] = useState<ChatMessage[] | undefined>(undefined);
+  const [chatContext, setChatContext] = useState<ChatContext | undefined>(undefined);
+  const lastPreviewTrig = useRef(0);
+
+  const openChat = useCallback(
+    (ctx?: ChatContext, seed?: ChatMessage[]) => {
+      onTalkToEvzi?.();
+      setChatContext(ctx);
+      setChatSeed(seed);
+      setChatSessionId((s) => s + 1);
+      setChatOpen(true);
+    },
+    [onTalkToEvzi]
+  );
+
+  const handleBackFromChat = useCallback(() => {
+    setChatOpen(false);
+    setChatSeed(undefined);
+    setChatContext(undefined);
+  }, []);
+
+  // Preview-mode trigger: opens chat from external state (e.g., the dev
+  // preview app's "Chat · empty" / "Chat · demo" buttons).
+  useEffect(() => {
+    if (!chatPreviewTrigger || chatPreviewTrigger === lastPreviewTrig.current) return;
+    lastPreviewTrig.current = chatPreviewTrigger;
+    const seed = chatPreviewMode === "demo" ? CHAT_DEMO_MESSAGES.map((m) => ({ ...m })) : [];
+    setChatSeed(seed.length ? seed : undefined);
+    setChatContext(undefined);
+    setChatSessionId((s) => s + 1);
+    setChatOpen(true);
+  }, [chatPreviewTrigger, chatPreviewMode]);
+
+  // Adapter: ChatScreen.sendMessage takes a flat (messages) signature; we
+  // bind the current chat context here so the screen doesn't need to know
+  // about it.
+  const sendForChat = onChatSend
+    ? (messages: ChatMessage[]) => onChatSend(messages, chatContext)
+    : undefined;
+
+  if (chatOpen) {
+    return (
+      <div className="w-[min(420px,100vw)] bg-transparent p-1.5">
+        <ChatScreen
+          key={chatSessionId}
+          initialMessages={chatSeed}
+          sendMessage={sendForChat}
+          onBack={handleBackFromChat}
+          onClose={() => window.close()}
+        />
+      </div>
+    );
+  }
+
   // --- idle ---
   if (!state || !id) {
     return (
-      <div className="w-[380px] bg-transparent p-1.5">
-        <Card className="evzi-popup-surface shadow-popup border-0">
-          <CardHeader className="space-y-1 pb-4">
-            <div className="flex items-center gap-2">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted">
-                <Shield className="h-5 w-5 text-foreground" aria-hidden />
-              </div>
-              <div>
-                <CardTitle className="text-base">Intent Check</CardTitle>
-                <CardDescription className="text-xs">Extension popup</CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="pb-6 pt-0">
-            <p className="text-sm text-muted-foreground">No active request. Trigger a transaction from a supported dapp to see analysis here.</p>
-          </CardContent>
-          <JudgeInfoFooter info={judgeInfo} />
-        </Card>
+      <div className="w-[min(420px,100vw)] bg-transparent p-1.5">
+        <IdleScreen onClose={() => window.close()} onTalkToEvzi={() => openChat()} />
       </div>
     );
   }
@@ -173,7 +250,7 @@ export function PopupView({ id, state, judgeInfo, onIntentConfirm, onReject, onA
           decoded={state.baseDraft.decoded}
           onConfirm={(intent) => onIntentConfirm(id, intent)}
           onClose={() => window.close()}
-          onTalkToEvzi={onTalkToEvzi}
+          onTalkToEvzi={() => openChat({ origin: state.baseDraft.origin })}
         />
       </div>
     );
@@ -181,7 +258,6 @@ export function PopupView({ id, state, judgeInfo, onIntentConfirm, onReject, onA
 
   // --- judging: full pipeline checklist + 60s stuck guard ---
   if (state.phase === "judging") {
-    // Reasoning models can take 30-60s on rich payloads. 90s is "really stuck".
     const stuck = Date.now() - state.enteredAt > 90_000;
     if (stuck) {
       return (
@@ -260,9 +336,6 @@ export function PopupView({ id, state, judgeInfo, onIntentConfirm, onReject, onA
   const rawDataText = formatJudgeInputRaw(state.judgeInput, state.origin);
   const dangerPrimaryIsReject = state.verdict.tier === "DANGER";
 
-  // Compose the same "Judge: openai · gpt-5.4" line we used to render via
-  // JudgeInfoFooter. Pass into VerdictScreen so it sits inside the surface
-  // border and matches the designer's visual rhythm.
   let judgeFooterLabel: string | undefined;
   if (judgeInfo) {
     if (judgeInfo.provider === "stub") judgeFooterLabel = "Judge: stub mode";
@@ -283,7 +356,7 @@ export function PopupView({ id, state, judgeInfo, onIntentConfirm, onReject, onA
         footerLabel={judgeFooterLabel}
         onPrimary={() => (dangerPrimaryIsReject ? onReject(id) : onApprove(id))}
         onSecondary={() => (dangerPrimaryIsReject ? onApprove(id) : onReject(id))}
-        onTalkToEvzi={onTalkToEvzi}
+        onTalkToEvzi={() => openChat({ judgeInput: state.judgeInput, verdict: state.verdict, origin: state.origin })}
         onClose={() => window.close()}
       />
     </div>
