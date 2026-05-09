@@ -35,27 +35,46 @@ const SYSTEM_PROMPT = `You infer a Web3 user's intent from page context captured
 
 You receive: dApp origin and page title, the button the user just clicked
 (text + section heading), visible form inputs and their values around that
-button, a short body-text excerpt from the same section, and a partial decoded
+button, a body-text excerpt from the same region, and a partial decoded
 action from the calldata when available.
 
-Your job: produce a one-sentence summary of what the user is trying to do, in
-plain English a non-technical user would write. Pick a kind from:
+Your job: produce ONE sentence describing what the user is trying to do in
+the most concrete terms the evidence supports. Pick a kind from:
 "swap" | "approve" | "deposit" | "mint" | "bridge" | "transfer" | "sign" | "other".
 
 Output JSON only with shape: { kind, summary, confidence }.
 
-- kind: one of the values above.
-- summary: under ~80 characters. Include amounts and token symbols when visible
-  (e.g., "Swap 0.1 ETH for OP on Uniswap"). If amounts/tokens are visible in
-  inputs, prefer them over generic "Swap on this dApp".
-- confidence: 0..1 — how confident you are in the inferred kind, given the
-  evidence. Strong button label + matching form inputs = high. Generic title
-  with no click context = low.
+# Summary writing rules
 
-Rules:
-- Trust the click context over the page title.
-- The decoded action's "kind" / "protocol" is a strong hint — use it.
-- For ambiguous cases, prefer "other" with low confidence over a guess.`;
+Aim for 60-110 characters. Always be as specific as the evidence allows:
+
+- If amounts and token symbols are visible (in inputs OR in nearbyText), include
+  them. "Swap 0.1 ETH for OP on Uniswap" beats "Swap on Uniswap".
+- If only one side's amount is visible (e.g., the input but not the output),
+  include the input and use a verb like "for".
+- Always name the protocol/dapp when it's identifiable from origin / ogSiteName
+  / decoded.protocol.
+- For approves: include the token symbol AND the spender protocol when known.
+  "Approve unlimited USDC to Uniswap Permit2" beats "Approve token".
+- For mints: include the collection name if visible. "Mint Base Genesis NFT
+  for 0.01 ETH" beats "Mint NFT".
+- For bridges: include source/dest chain. "Bridge 100 USDC from Ethereum to Base".
+
+Never default to a generic placeholder when the evidence is rich — if you have
+amounts visible in nearbyText, USE them.
+
+# Confidence
+
+- 0.9+ : strong button text + form values matching + decoded action consistent.
+- 0.6-0.8 : button text matches but only some amounts visible.
+- 0.3-0.5 : page title only, no click/form context.
+- < 0.3 : kind is genuinely ambiguous.
+
+# Hierarchy of trust
+
+Click context > decoded.kind/protocol > nearbyText > og:title > page title.
+
+For unclear cases, prefer "other" with low confidence over a guess.`;
 
 const SCHEMA = {
   type: "object",
@@ -71,7 +90,10 @@ const SCHEMA = {
 export async function inferIntentLLM(
   input: InferIntentInput,
   apiKey: string,
-  model: string = "gpt-5-mini",
+  // gpt-5.1 produces noticeably more specific, well-formed summaries than
+  // gpt-5-mini for this task — small per-call cost is worth it for the
+  // headline UX. Override via OPENAI_INFER_MODEL.
+  model: string = "gpt-5.1",
 ): Promise<UserIntent> {
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
