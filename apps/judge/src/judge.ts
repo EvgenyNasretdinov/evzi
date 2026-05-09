@@ -45,7 +45,7 @@ export function mountJudge(app: Hono<any>, optsLike: JudgeOptionsLike) {
 
     if (opts.stubVerdict) {
       const v: JudgeVerdict = { tier: "SAFE", headline: stubHeadline(input), reasons: [{ severity: "info", text: "Stubbed verdict." }], confidence: 0.5 };
-      return c.json(applySafetyFloor(v, input.findings));
+      return c.json(applySafetyFloor(v, input));
     }
 
     if (!opts.anthropicApiKey && !opts.openaiApiKey && !opts.llmOverride) {
@@ -61,7 +61,7 @@ export function mountJudge(app: Hono<any>, optsLike: JudgeOptionsLike) {
       } else {
         llm = await llmJudge(input, opts.anthropicApiKey!);
       }
-      return c.json(applySafetyFloor(llm, input.findings));
+      return c.json(applySafetyFloor(llm, input));
     } catch (e) {
       return c.json({ error: "llm_failed", message: String((e as Error).message ?? e) }, 502);
     }
