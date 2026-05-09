@@ -8,12 +8,28 @@ import { inferIntentLLM, type InferIntentInput } from "./inferIntent";
 export interface JudgeOptions {
   stubVerdict?: boolean;
   anthropicApiKey?: string;
+  anthropicModel?: string;
   openaiApiKey?: string;
   openaiModel?: string;
   openaiInferModel?: string;  // small/cheap model for /infer-intent
+  /** Force a specific provider regardless of which keys are set. */
+  preferredProvider?: "openai" | "anthropic";
   apiKey?: string;
   llmOverride?: (input: JudgeInput) => Promise<JudgeVerdict>; // for tests
   inferIntentOverride?: (input: InferIntentInput) => Promise<UserIntent>; // for tests
+}
+
+/**
+ * Pick which LLM path to use given the configured options. Honors an explicit
+ * preferredProvider when its key is present; otherwise OpenAI wins if both
+ * keys are set (backwards-compatible default), then Anthropic, then "none".
+ */
+function pickProvider(opts: JudgeOptions): "openai" | "anthropic" | "none" {
+  if (opts.preferredProvider === "anthropic" && opts.anthropicApiKey) return "anthropic";
+  if (opts.preferredProvider === "openai" && opts.openaiApiKey) return "openai";
+  if (opts.openaiApiKey) return "openai";
+  if (opts.anthropicApiKey) return "anthropic";
+  return "none";
 }
 
 export type JudgeOptionsLike = JudgeOptions | ((c: Context<any>) => JudgeOptions);
@@ -27,13 +43,11 @@ export function mountJudge(app: Hono<any>, optsLike: JudgeOptionsLike) {
   // model is currently active without exposing any secrets.
   app.get("/judge/info", (c) => {
     const opts = resolveOpts(c, optsLike);
-    let provider: "stub" | "openai" | "anthropic" | "none";
-    let model: string | undefined;
-    if (opts.stubVerdict) { provider = "stub"; model = undefined; }
-    else if (opts.openaiApiKey) { provider = "openai"; model = opts.openaiModel ?? "gpt-5.5"; }
-    else if (opts.anthropicApiKey) { provider = "anthropic"; model = "claude-sonnet-4-6"; }
-    else { provider = "none"; model = undefined; }
-    return c.json({ provider, model });
+    if (opts.stubVerdict) return c.json({ provider: "stub" });
+    const p = pickProvider(opts);
+    if (p === "openai")    return c.json({ provider: "openai", model: opts.openaiModel ?? "gpt-5.4" });
+    if (p === "anthropic") return c.json({ provider: "anthropic", model: opts.anthropicModel ?? "claude-sonnet-4-6" });
+    return c.json({ provider: "none" });
   });
 
   app.post("/infer-intent", async (c) => {
@@ -84,10 +98,11 @@ export function mountJudge(app: Hono<any>, optsLike: JudgeOptionsLike) {
       let llm: JudgeVerdict;
       if (opts.llmOverride) {
         llm = await opts.llmOverride(input);
-      } else if (opts.openaiApiKey) {
-        llm = await llmJudgeOpenAI(input, opts.openaiApiKey, opts.openaiModel);
       } else {
-        llm = await llmJudge(input, opts.anthropicApiKey!);
+        const provider = pickProvider(opts);
+        if (provider === "openai")    llm = await llmJudgeOpenAI(input, opts.openaiApiKey!, opts.openaiModel);
+        else if (provider === "anthropic") llm = await llmJudge(input, opts.anthropicApiKey!, opts.anthropicModel);
+        else throw new Error("no LLM provider configured");
       }
       return c.json(applySafetyFloor(llm, input));
     } catch (e) {

@@ -2,13 +2,13 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { JudgeInput, JudgeVerdict } from "@intent-check/types";
 import { SYSTEM_PROMPT } from "./prompt";
 
-export async function llmJudge(input: JudgeInput, apiKey: string): Promise<JudgeVerdict> {
+export async function llmJudge(input: JudgeInput, apiKey: string, model: string = "claude-sonnet-4-6"): Promise<JudgeVerdict> {
   const client = new Anthropic({ apiKey });
   const userPayload = JSON.stringify(input);
 
   const msg = await client.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 600,
+    model,
+    max_tokens: 1024,
     system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } } as any],
     messages: [{ role: "user", content: userPayload }],
   });

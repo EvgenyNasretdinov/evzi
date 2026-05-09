@@ -4,9 +4,12 @@ import { mountJudge } from "./judge";
 
 export interface Env {
   ANTHROPIC_API_KEY?: string;
+  ANTHROPIC_MODEL?: string;        // default claude-sonnet-4-6
   OPENAI_API_KEY?: string;
-  OPENAI_MODEL?: string;
-  OPENAI_INFER_MODEL?: string;  // override for /infer-intent (default gpt-5-mini)
+  OPENAI_MODEL?: string;           // default gpt-5.5
+  OPENAI_INFER_MODEL?: string;     // override for /infer-intent (default gpt-5-mini)
+  /** "openai" | "anthropic" — overrides which provider is preferred when both keys are set. */
+  LLM_PROVIDER?: string;
   JUDGE_API_KEY: string;
   STUB_VERDICT?: string;
 }
@@ -16,13 +19,19 @@ app.use("*", cors({ origin: "*", allowHeaders: ["Content-Type", "x-api-key"] }))
 app.get("/", (c) => c.text("intent-check judge ok"));
 
 // Mount once at module load. The handler reads env per-request via the
-// function form of options. If both keys are set, OpenAI wins (cheaper default).
+// function form of options. If both keys are set, the OpenAI path wins by
+// default; set LLM_PROVIDER=anthropic in .dev.vars to force the Anthropic
+// path while keeping the OpenAI key (e.g. for /infer-intent).
 mountJudge(app, (c) => ({
   stubVerdict: c.env.STUB_VERDICT === "1",
   anthropicApiKey: c.env.ANTHROPIC_API_KEY,
+  anthropicModel: c.env.ANTHROPIC_MODEL,
   openaiApiKey: c.env.OPENAI_API_KEY,
   openaiModel: c.env.OPENAI_MODEL,
   openaiInferModel: c.env.OPENAI_INFER_MODEL,
+  preferredProvider: c.env.LLM_PROVIDER === "anthropic" ? "anthropic"
+    : c.env.LLM_PROVIDER === "openai" ? "openai"
+    : undefined,
   apiKey: c.env.JUDGE_API_KEY,
 }));
 
