@@ -11,3 +11,4 @@ export async function decode(ctx: DecodeContext): Promise<DecodedAction> {
 }
 
 export { selectorOf };
+export { decodeTypedData, parseTypedData, classifyVerifyingContract, isUnlimitedAmount } from "./eip712";
