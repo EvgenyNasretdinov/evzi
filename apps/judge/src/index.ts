@@ -3,7 +3,9 @@ import { cors } from "hono/cors";
 import { mountJudge } from "./judge";
 
 export interface Env {
-  ANTHROPIC_API_KEY: string;
+  ANTHROPIC_API_KEY?: string;
+  OPENAI_API_KEY?: string;
+  OPENAI_MODEL?: string;
   JUDGE_API_KEY: string;
   STUB_VERDICT?: string;
 }
@@ -13,10 +15,12 @@ app.use("*", cors({ origin: "*", allowHeaders: ["Content-Type", "x-api-key"] }))
 app.get("/", (c) => c.text("intent-check judge ok"));
 
 // Mount once at module load. The handler reads env per-request via the
-// function form of options.
+// function form of options. If both keys are set, OpenAI wins (cheaper default).
 mountJudge(app, (c) => ({
   stubVerdict: c.env.STUB_VERDICT === "1",
   anthropicApiKey: c.env.ANTHROPIC_API_KEY,
+  openaiApiKey: c.env.OPENAI_API_KEY,
+  openaiModel: c.env.OPENAI_MODEL,
   apiKey: c.env.JUDGE_API_KEY,
 }));
 

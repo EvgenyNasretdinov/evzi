@@ -2,10 +2,13 @@ import type { Hono, Context } from "hono";
 import type { JudgeInput, JudgeVerdict } from "@intent-check/types";
 import { applySafetyFloor } from "./safetyFloor";
 import { llmJudge } from "./anthropic";
+import { llmJudgeOpenAI } from "./openai";
 
 export interface JudgeOptions {
   stubVerdict?: boolean;
   anthropicApiKey?: string;
+  openaiApiKey?: string;
+  openaiModel?: string;
   apiKey?: string;
   llmOverride?: (input: JudgeInput) => Promise<JudgeVerdict>; // for tests
 }
@@ -17,6 +20,19 @@ function resolveOpts(c: Context<any>, optsLike: JudgeOptionsLike): JudgeOptions 
 }
 
 export function mountJudge(app: Hono<any>, optsLike: JudgeOptionsLike) {
+  // Public, unauthenticated info endpoint — lets the extension display which
+  // model is currently active without exposing any secrets.
+  app.get("/judge/info", (c) => {
+    const opts = resolveOpts(c, optsLike);
+    let provider: "stub" | "openai" | "anthropic" | "none";
+    let model: string | undefined;
+    if (opts.stubVerdict) { provider = "stub"; model = undefined; }
+    else if (opts.openaiApiKey) { provider = "openai"; model = opts.openaiModel ?? "gpt-5.2"; }
+    else if (opts.anthropicApiKey) { provider = "anthropic"; model = "claude-sonnet-4-6"; }
+    else { provider = "none"; model = undefined; }
+    return c.json({ provider, model });
+  });
+
   app.post("/judge", async (c) => {
     const opts = resolveOpts(c, optsLike);
     const apiKey = opts.apiKey;
@@ -32,12 +48,19 @@ export function mountJudge(app: Hono<any>, optsLike: JudgeOptionsLike) {
       return c.json(applySafetyFloor(v, input.findings));
     }
 
-    if (!opts.anthropicApiKey && !opts.llmOverride) return c.json({ error: "ANTHROPIC_API_KEY missing" }, 500);
+    if (!opts.anthropicApiKey && !opts.openaiApiKey && !opts.llmOverride) {
+      return c.json({ error: "no_llm_key", message: "Set OPENAI_API_KEY or ANTHROPIC_API_KEY." }, 500);
+    }
 
     try {
-      const llm = opts.llmOverride
-        ? await opts.llmOverride(input)
-        : await llmJudge(input, opts.anthropicApiKey!);
+      let llm: JudgeVerdict;
+      if (opts.llmOverride) {
+        llm = await opts.llmOverride(input);
+      } else if (opts.openaiApiKey) {
+        llm = await llmJudgeOpenAI(input, opts.openaiApiKey, opts.openaiModel);
+      } else {
+        llm = await llmJudge(input, opts.anthropicApiKey!);
+      }
       return c.json(applySafetyFloor(llm, input.findings));
     } catch (e) {
       return c.json({ error: "llm_failed", message: String((e as Error).message ?? e) }, 502);

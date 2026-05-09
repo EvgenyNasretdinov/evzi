@@ -66,3 +66,44 @@ describe("/judge stub", () => {
     expect(res.status).toBe(400);
   });
 });
+
+describe("/judge/info", () => {
+  it("reports stub provider when stubVerdict is on", async () => {
+    const app = new Hono();
+    mountJudge(app, { stubVerdict: true, apiKey: "k" });
+    const res = await app.request("/judge/info");
+    const body = (await res.json()) as { provider: string; model?: string };
+    expect(body.provider).toBe("stub");
+    expect(body.model).toBeUndefined();
+  });
+
+  it("reports openai with default model gpt-5.2", async () => {
+    const app = new Hono();
+    mountJudge(app, { apiKey: "k", openaiApiKey: "sk-fake" });
+    const body = (await (await app.request("/judge/info")).json()) as { provider: string; model?: string };
+    expect(body.provider).toBe("openai");
+    expect(body.model).toBe("gpt-5.2");
+  });
+
+  it("reports openai with custom model when overridden", async () => {
+    const app = new Hono();
+    mountJudge(app, { apiKey: "k", openaiApiKey: "sk-fake", openaiModel: "gpt-5.4" });
+    const body = (await (await app.request("/judge/info")).json()) as { provider: string; model?: string };
+    expect(body.model).toBe("gpt-5.4");
+  });
+
+  it("reports anthropic when only anthropic key is set", async () => {
+    const app = new Hono();
+    mountJudge(app, { apiKey: "k", anthropicApiKey: "sk-ant-fake" });
+    const body = (await (await app.request("/judge/info")).json()) as { provider: string; model?: string };
+    expect(body.provider).toBe("anthropic");
+    expect(body.model).toBe("claude-sonnet-4-6");
+  });
+
+  it("reports none when no LLM key is set", async () => {
+    const app = new Hono();
+    mountJudge(app, { apiKey: "k" });
+    const body = (await (await app.request("/judge/info")).json()) as { provider: string };
+    expect(body.provider).toBe("none");
+  });
+});
