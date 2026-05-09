@@ -145,7 +145,9 @@ export function ConfirmIntentScreen({
         <Separator />
 
         <div className="space-y-6 px-6 py-6">
-          {/* Site sanity check */}
+          {/* Site sanity check + adjacent concern field. The "What feels off?"
+              textarea sits directly under the toggle so the user's reasoning is
+              captured at the moment they flag the site, not three fields away. */}
           <div className="space-y-2">
             <p className="text-sm leading-5 text-neutral-800">{siteLine}</p>
             <div className="inline-flex h-9 rounded-md bg-muted p-0.5">
@@ -174,6 +176,21 @@ export function ConfirmIntentScreen({
                 Something feels off
               </button>
             </div>
+            {siteOk === "off" && (
+              <div className="space-y-2 pt-1">
+                <Textarea
+                  value={concern}
+                  onChange={(e) => setConcern(e.target.value)}
+                  placeholder="What feels off? e.g. URL has unusual characters, page just changed, amount looks bigger than I picked…"
+                  className="min-h-[4rem] resize-y text-sm shadow-sm"
+                  aria-label="What feels off"
+                  autoFocus
+                />
+                <p className="text-xs text-muted-foreground">
+                  Your note goes to the agent so it can look for what you noticed.
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Kind override — keeps the inferred kind unless the user disagrees. */}
@@ -204,26 +221,6 @@ export function ConfirmIntentScreen({
               aria-label="Intent summary"
             />
           </div>
-
-          {/* Concern field — appears ONLY when user flagged something off. */}
-          {siteOk === "off" && (
-            <div className="space-y-2">
-              <Label className="text-sm font-normal text-neutral-800">
-                What feels off?
-              </Label>
-              <Textarea
-                value={concern}
-                onChange={(e) => setConcern(e.target.value)}
-                placeholder="e.g. URL has unusual characters, the page just changed, the amount looks bigger than I picked…"
-                className="min-h-[4rem] resize-y text-sm shadow-sm"
-                aria-label="What feels off"
-                autoFocus
-              />
-              <p className="text-xs text-muted-foreground">
-                Your note goes to the agent so it can look for what you noticed.
-              </p>
-            </div>
-          )}
         </div>
 
         <Separator />
