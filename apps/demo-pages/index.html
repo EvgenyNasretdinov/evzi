@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Intent Check · demo scenarios</title>
+<style>
+  body { font-family: system-ui, -apple-system, sans-serif; max-width: 640px; margin: 4rem auto; padding: 0 1rem; line-height: 1.5; }
+  h1 { font-size: 1.4rem; margin-bottom: 0.25rem; }
+  p.lede { color: #555; margin-top: 0; }
+  ul { list-style: none; padding: 0; }
+  li { border: 1px solid #e5e5e5; border-radius: 8px; padding: 1rem; margin-bottom: 0.75rem; }
+  li h2 { font-size: 1.05rem; margin: 0 0 0.25rem; }
+  li p { margin: 0 0 0.5rem; color: #555; font-size: 0.95rem; }
+  a.btn { display: inline-block; background: #171717; color: white; padding: 0.45rem 0.9rem; border-radius: 6px; text-decoration: none; font-weight: 500; font-size: 0.9rem; }
+  a.btn:hover { background: #2a2a2a; }
+  code { background: #f4f4f5; padding: 1px 5px; border-radius: 4px; font-size: 0.85em; }
+</style>
+</head>
+<body>
+<h1>Intent Check — demo scenarios</h1>
+<p class="lede">Static pages that simulate common phishing patterns. Use to test the extension end-to-end without finding malicious sites in the wild.</p>
+
+<ul>
+  <li>
+    <h2>1. Hidden approval ("free mint" drainer)</h2>
+    <p>Page styled like an NFT mint, button actually triggers <code>USDC.approve(0xdEaD…, MAX_UINT256)</code> on Base. The deterministic <code>UNLIMITED_APPROVAL</code> finding should fire and force <strong>DANGER</strong>.</p>
+    <a class="btn" href="./fake-mint.html">Open fake-mint demo →</a>
+  </li>
+  <li>
+    <h2>2. Permit2 batch drainer</h2>
+    <p>Page styled like an airdrop claim, asks for an <code>eth_signTypedData_v4</code> Permit2 batch transfer authorization to an unknown spender across multiple stablecoins. The <code>PERMIT2_SPENDER_UNKNOWN</code> finding should fire.</p>
+    <a class="btn" href="./airdrop-claim.html">Open airdrop-claim demo →</a>
+  </li>
+  <li>
+    <h2>3. Lookalike origin (origin-trust check)</h2>
+    <p>This file would normally live on a fake hostname like <code>app.unisvvap.org</code>. To simulate, host this folder on a typo-domain (or use Chrome's "Override host" devtools) and trigger any wallet request. The <code>LOOKALIKE_DOMAIN</code> finding should fire.</p>
+    <span style="color: #888; font-size: 0.85em;">No standalone HTML — re-open #1 or #2 from a typo domain.</span>
+  </li>
+</ul>
+
+<p style="margin-top: 2rem; font-size: 0.85em; color: #888;">
+Open <code>chrome://extensions</code>, ensure <strong>Intent Check</strong> is loaded unpacked from <code>apps/extension/dist</code>, then connect a (test) wallet on Base or Optimism and trigger the buttons above.
+</p>
+</body>
+</html>

