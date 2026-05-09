@@ -49,6 +49,7 @@ const BY_CHAIN: Record<number, Record<string, ProtocolInfo>> = {
     "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2": { protocol: "WETH", name: "WETH9", kind: "weth" },
     "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": { protocol: "Circle", name: "USDC", kind: "stablecoin" },
     "0xdac17f958d2ee523a2206206994597c13d831ec7": { protocol: "Tether", name: "USDT", kind: "stablecoin" },
+    "0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2": { protocol: "Aave", name: "Aave v3 Pool", kind: "lending" },
   },
   // Optimism.
   10: {
@@ -57,6 +58,7 @@ const BY_CHAIN: Record<number, Record<string, ProtocolInfo>> = {
     "0x4200000000000000000000000000000000000006": { protocol: "WETH", name: "WETH (Optimism)", kind: "weth" },
     "0x0b2c639c533813f4aa9d7837caf62653d097ff85": { protocol: "Circle", name: "USDC (Optimism)", kind: "stablecoin" },
     "0x4200000000000000000000000000000000000042": { protocol: "Optimism", name: "OP token", kind: "other" },
+    "0x794a61358d6845594f94dc1db02a252b5b4814ad": { protocol: "Aave", name: "Aave v3 Pool (Optimism)", kind: "lending" },
   },
   // Polygon.
   137: {
@@ -67,10 +69,12 @@ const BY_CHAIN: Record<number, Record<string, ProtocolInfo>> = {
     "0x6ff5693b99212da76ad316178a184ab56d299b43": { protocol: "Uniswap", name: "UniversalRouter v2", kind: "router" },
     "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913": { protocol: "Circle", name: "USDC (Base)", kind: "stablecoin" },
     "0x4200000000000000000000000000000000000006": { protocol: "WETH", name: "WETH (Base)", kind: "weth" },
+    "0xa238dd80c259a72e81d7e4664a9801593f98d1c5": { protocol: "Aave", name: "Aave v3 Pool (Base)", kind: "lending" },
   },
   // Arbitrum.
   42161: {
     "0x5e325eda8064b456f4781070c0738d849c824258": { protocol: "Uniswap", name: "UniversalRouter v2", kind: "router" },
+    "0x794a61358d6845594f94dc1db02a252b5b4814ad": { protocol: "Aave", name: "Aave v3 Pool (Arbitrum)", kind: "lending" },
   },
   // BNB.
   56: {

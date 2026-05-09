@@ -37,6 +37,7 @@ export type DecodedAction =
   | { kind: "permit"; token: string; owner: string; spender: string; amount: string; deadline: string }
   | { kind: "permit2Transfer"; permitted: TokenAmount[]; spender: string; deadline: string }
   | { kind: "seaportOrder"; offerer: string; offer: TokenAmount[]; consideration: TokenAmount[] }
+  | { kind: "lendingAction"; protocol: string; verb: "supply" | "withdraw" | "borrow" | "repay"; asset: string; amount: string; onBehalfOf?: string; pool: string; trusted?: boolean }
   | { kind: "unknown"; selector: string; functionName?: string; rawArgs?: unknown[] };
 
 // Tenderly simulation result, normalized.
