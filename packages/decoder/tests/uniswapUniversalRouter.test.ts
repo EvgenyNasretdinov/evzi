@@ -125,4 +125,36 @@ describe("uniswap universal router", () => {
     if (result.kind !== "swap") throw new Error();
     expect(result.commands).toEqual(["V3_SWAP_EXACT_IN", "UNWRAP_WETH"]);
   });
+
+  // ---- M2.7: 2-arg execute(bytes,bytes[]) variant + V4-only command tolerance ----
+
+  const UR_ABI_2ARG = [
+    { type: "function", name: "execute", stateMutability: "payable",
+      inputs: [
+        { name: "commands", type: "bytes" },
+        { name: "inputs", type: "bytes[]" },
+      ],
+      outputs: [],
+    },
+  ] as const;
+
+  it("decodes execute(bytes,bytes[]) (2-arg variant, selector 0x24856bc3)", async () => {
+    const path = encodePacked(["address", "uint24", "address"], [USDC, 500, WETH]);
+    const input = buildV3SwapExactInInput(MSG_SENDER, 100n, 0n, path, true);
+    const data = encodeFunctionData({ abi: UR_ABI_2ARG, functionName: "execute", args: ["0x00", [input]] });
+    expect(data.startsWith("0x24856bc3")).toBe(true);
+    const result = await decode({ chainId: 8453, to: ROUTER, data, value: "0x0", from: SENDER });
+    if (result.kind !== "swap") throw new Error();
+    expect(result.commands).toEqual(["V3_SWAP_EXACT_IN"]);
+    expect(result.recipientKind).toBe("wallet");
+  });
+
+  it("returns a low-confidence swap with commands list when only V4_SWAP is present", async () => {
+    // V4_SWAP id is 0x10. We don't decode its sub-plan args — just surface the structure.
+    const data = encodeFunctionData({ abi: UR_ABI_2ARG, functionName: "execute", args: ["0x10", ["0x"]] });
+    const result = await decode({ chainId: 8453, to: ROUTER, data, value: "0x0", from: SENDER });
+    if (result.kind !== "swap") throw new Error();
+    expect(result.commands).toEqual(["V4_SWAP"]);
+    expect(result.recipientKind).toBe("router_self");
+  });
 });

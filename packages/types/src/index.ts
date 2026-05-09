@@ -80,6 +80,10 @@ export interface ContractMeta {
   implementation?: string;
   deploymentBlock?: number;
   ageHours?: number;
+  // Set when (chainId, address) hits the bundled protocol registry. This is a
+  // deterministic trust signal that's independent of whether Sourcify has the
+  // contract verified or whether the calldata decoded as a recognized shape.
+  knownProtocol?: { protocol: string; name: string; kind: string };
 }
 
 // Origin / page signals.
