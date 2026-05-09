@@ -30,7 +30,7 @@ export interface TokenAmount {
 
 // Decoded structured action from calldata.
 export type DecodedAction =
-  | { kind: "swap"; tokenIn: TokenAmount; tokenOut: TokenAmount; minAmountOut: string; recipient: string; router: string; protocol: string; trusted?: boolean }
+  | { kind: "swap"; tokenIn: TokenAmount; tokenOut: TokenAmount; minAmountOut: string; recipient: string; recipientKind?: "wallet" | "router_self" | "third_party"; router: string; protocol: string; trusted?: boolean; commands?: string[] }
   | { kind: "approve"; token: string; spender: string; amount: string; isUnlimited: boolean }
   | { kind: "setApprovalForAll"; collection: string; operator: string; approved: boolean }
   | { kind: "transfer"; token: string; to: string; amount: string }
@@ -128,6 +128,17 @@ export interface JudgeInput {
   origin: OriginSignals;
   findings: Finding[];   // deterministic findings already computed
   request: WalletRequest;
+  // Net token deltas for the user's wallet, derived from sim.assetChanges.
+  // Positive amounts = received; negative = sent. Empty when sim is absent.
+  netEffect?: { wallet: string; deltas: NetDelta[] };
+}
+
+export interface NetDelta {
+  chainId: number;
+  token: string;     // 0x... address; "ETH" sentinel if native
+  symbol?: string;
+  decimals?: number;
+  amount: string;    // signed integer string (raw)
 }
 
 // Output of /judge.

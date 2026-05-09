@@ -34,9 +34,52 @@ const CMD_V3_SWAP_EXACT_OUT = 0x01;
 const CMD_V2_SWAP_EXACT_IN = 0x08;
 const CMD_V2_SWAP_EXACT_OUT = 0x09;
 
+// Universal Router command id → human-readable name. Subset focused on the most
+// common Web3 user flows; unknown ids stringify as "0x??".
+const COMMAND_NAMES: Record<number, string> = {
+  0x00: "V3_SWAP_EXACT_IN",
+  0x01: "V3_SWAP_EXACT_OUT",
+  0x02: "PERMIT2_TRANSFER_FROM",
+  0x03: "PERMIT2_PERMIT_BATCH",
+  0x04: "SWEEP",
+  0x05: "TRANSFER",
+  0x06: "PAY_PORTION",
+  0x08: "V2_SWAP_EXACT_IN",
+  0x09: "V2_SWAP_EXACT_OUT",
+  0x0a: "PERMIT2_PERMIT",
+  0x0b: "WRAP_ETH",
+  0x0c: "UNWRAP_WETH",
+  0x0d: "PERMIT2_TRANSFER_FROM_BATCH",
+  0x10: "EXECUTE_SUB_PLAN",
+  0x11: "APPROVE_ERC20",
+};
+
+function commandName(cmd: number): string {
+  return COMMAND_NAMES[cmd] ?? `0x${cmd.toString(16).padStart(2, "0")}`;
+}
+
 function isSwapCommand(c: number): boolean {
   return c === CMD_V3_SWAP_EXACT_IN || c === CMD_V3_SWAP_EXACT_OUT
       || c === CMD_V2_SWAP_EXACT_IN || c === CMD_V2_SWAP_EXACT_OUT;
+}
+
+// Universal Router uses two address sentinels in the recipient field of swap
+// commands. Treat both as normal protocol semantics rather than third-party
+// addresses — see Uniswap UR Constants.sol.
+const ADDRESS_THIS = "0x0000000000000000000000000000000000000002"; // route output stays on the router for next command
+const MSG_SENDER = "0x0000000000000000000000000000000000000001";   // route output goes to the user's wallet
+
+function classifyRecipient(addrLower: string, walletLower?: string): { resolved: string; kind: "wallet" | "router_self" | "third_party" } {
+  if (addrLower === MSG_SENDER) {
+    return { resolved: walletLower ? getAddress(walletLower) : MSG_SENDER, kind: "wallet" };
+  }
+  if (addrLower === ADDRESS_THIS) {
+    return { resolved: ADDRESS_THIS, kind: "router_self" };
+  }
+  if (walletLower && addrLower === walletLower) {
+    return { resolved: getAddress(walletLower), kind: "wallet" };
+  }
+  return { resolved: getAddress(addrLower), kind: "third_party" };
 }
 
 function firstAndLastTokenInV3Path(path: Hex): { first: string; last: string } {
@@ -51,22 +94,24 @@ function firstAndLastTokenInV3Path(path: Hex): { first: string; last: string } {
   return { first: getAddress(first), last: getAddress(last) };
 }
 
-export function tryDecodeUniversalRouter(input: { chainId: number; to: string; data: string }): DecodedAction | null {
+export function tryDecodeUniversalRouter(input: { chainId: number; to: string; data: string; from?: string }): DecodedAction | null {
   if (!input.data || input.data.length < 10) return null;
   if (input.data.slice(0, 10).toLowerCase() !== "0x3593564c") return null; // execute selector
 
   // Selector match is enough to attempt decode; if args don't fit the UR shape
   // the try/catch below sends us back to the next recognizer / unknown fallback.
   const trusted = isKnownRouter(input.chainId, input.to);
+  const walletLower = input.from?.toLowerCase();
 
   try {
     const { args } = decodeFunctionData({ abi: UR_ABI, data: input.data as Hex });
     const [commandsHex, inputs] = args as [Hex, Hex[], bigint];
-    const commands = Array.from(commandsHex.slice(2).match(/.{2}/g) ?? []).map((b) => parseInt(b, 16) & 0x3f);
+    const commandIds = Array.from(commandsHex.slice(2).match(/.{2}/g) ?? []).map((b) => parseInt(b, 16) & 0x3f);
+    const commands = commandIds.map(commandName);
 
-    const swapIdx = commands.findIndex(isSwapCommand);
+    const swapIdx = commandIds.findIndex(isSwapCommand);
     if (swapIdx === -1) return null;
-    const cmd = commands[swapIdx]!;
+    const cmd = commandIds[swapIdx]!;
     const swapInput = inputs[swapIdx]!;
 
     if (cmd === CMD_V3_SWAP_EXACT_IN) {
@@ -75,15 +120,19 @@ export function tryDecodeUniversalRouter(input: { chainId: number; to: string; d
         swapInput
       );
       const { first, last } = firstAndLastTokenInV3Path(path as Hex);
+      const recipientLower = (recipient as string).toLowerCase();
+      const r = classifyRecipient(recipientLower, walletLower);
       return {
         kind: "swap",
         tokenIn:  { chainId: input.chainId, address: first, amount: (amountIn as bigint).toString() },
         tokenOut: { chainId: input.chainId, address: last,  amount: "0" },
         minAmountOut: (amountOutMin as bigint).toString(),
-        recipient: getAddress(recipient as string),
+        recipient: r.resolved,
+        recipientKind: r.kind,
         router: getAddress(input.to),
         protocol: "Uniswap",
         trusted,
+        commands,
       };
     }
 
@@ -94,9 +143,11 @@ export function tryDecodeUniversalRouter(input: { chainId: number; to: string; d
       tokenOut: { chainId: input.chainId, address: "0x0000000000000000000000000000000000000000", amount: "0" },
       minAmountOut: "0",
       recipient: getAddress(input.to),
+      recipientKind: "router_self",
       router: getAddress(input.to),
       protocol: "Uniswap",
       trusted,
+      commands,
     };
   } catch {
     return null;

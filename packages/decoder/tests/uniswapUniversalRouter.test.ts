@@ -79,4 +79,50 @@ describe("uniswap universal router", () => {
     const result = await decode({ chainId: 8453, to: ROUTER, data, value: "0x0" });
     expect(result.kind).toBe("unknown");
   });
+
+  // ---- M2.6 sentinel + commands list ----
+
+  const SENDER = "0xf8A8061e985fa35b8ED2f57ae1516816D5E712CE";
+  const MSG_SENDER = "0x0000000000000000000000000000000000000001";
+  const ADDRESS_THIS = "0x0000000000000000000000000000000000000002";
+
+  it("resolves recipient sentinel 0x...0001 to the user's wallet (recipientKind=wallet)", async () => {
+    const path = encodePacked(["address", "uint24", "address"], [USDC, 500, WETH]);
+    const input = buildV3SwapExactInInput(MSG_SENDER, 100n, 0n, path, true);
+    const data = encodeFunctionData({ abi: UR_ABI, functionName: "execute", args: ["0x00", [input], 0n] });
+    const result = await decode({ chainId: 8453, to: ROUTER, data, value: "0x0", from: SENDER });
+    if (result.kind !== "swap") throw new Error();
+    expect(result.recipientKind).toBe("wallet");
+    expect(result.recipient.toLowerCase()).toBe(SENDER.toLowerCase());
+  });
+
+  it("recognizes recipient sentinel 0x...0002 as router_self forwarding", async () => {
+    const path = encodePacked(["address", "uint24", "address"], [USDC, 500, WETH]);
+    const input = buildV3SwapExactInInput(ADDRESS_THIS, 100n, 0n, path, true);
+    const data = encodeFunctionData({ abi: UR_ABI, functionName: "execute", args: ["0x0001", [input, "0x"], 0n] });
+    const result = await decode({ chainId: 8453, to: ROUTER, data, value: "0x0", from: SENDER });
+    if (result.kind !== "swap") throw new Error();
+    expect(result.recipientKind).toBe("router_self");
+    expect(result.recipient.toLowerCase()).toBe(ADDRESS_THIS.toLowerCase());
+  });
+
+  it("flags non-sentinel non-sender recipient as third_party", async () => {
+    const THIRD = "0x000000000000000000000000000000000000dEaD";
+    const path = encodePacked(["address", "uint24", "address"], [USDC, 500, WETH]);
+    const input = buildV3SwapExactInInput(THIRD, 100n, 0n, path, true);
+    const data = encodeFunctionData({ abi: UR_ABI, functionName: "execute", args: ["0x00", [input], 0n] });
+    const result = await decode({ chainId: 8453, to: ROUTER, data, value: "0x0", from: SENDER });
+    if (result.kind !== "swap") throw new Error();
+    expect(result.recipientKind).toBe("third_party");
+  });
+
+  it("returns the full command sequence for chained UR calls (e.g., V3_SWAP + UNWRAP_WETH)", async () => {
+    const path = encodePacked(["address", "uint24", "address"], [USDC, 500, WETH]);
+    const swapInput = buildV3SwapExactInInput(ADDRESS_THIS, 100n, 0n, path, true);
+    // commands = 0x000c → V3_SWAP_EXACT_IN, UNWRAP_WETH
+    const data = encodeFunctionData({ abi: UR_ABI, functionName: "execute", args: ["0x000c", [swapInput, "0x"], 0n] });
+    const result = await decode({ chainId: 8453, to: ROUTER, data, value: "0x0", from: SENDER });
+    if (result.kind !== "swap") throw new Error();
+    expect(result.commands).toEqual(["V3_SWAP_EXACT_IN", "UNWRAP_WETH"]);
+  });
 });
