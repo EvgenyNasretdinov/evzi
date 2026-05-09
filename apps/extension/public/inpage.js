@@ -14,8 +14,8 @@
   function extractInputs(section) {
     var out = [];
     if (!section) return out;
-    var MAX = 6;
-    var fields = section.querySelectorAll("input, textarea, [contenteditable='true']");
+    var MAX = 8;
+    var fields = section.querySelectorAll("input, textarea, [contenteditable='true'], [role='textbox']");
     for (var i = 0; i < fields.length && out.length < MAX; i++) {
       var f = fields[i];
       var type = (f.getAttribute("type") || "").toLowerCase();
@@ -45,11 +45,33 @@
   }
 
   // Short text excerpt from the action's section. Helps the LLM disambiguate
-  // when labels alone are ambiguous (e.g. "Confirm").
+  // when labels alone are ambiguous (e.g. "Confirm"). React-virtualized dApps
+  // (Uniswap, etc) often don't expose semantic <section>/<form>, so we capture
+  // a generous text window from the click target's region.
   function extractNearbyText(section) {
     if (!section || !(section instanceof HTMLElement)) return "";
     var text = (section.innerText || "").replace(/\s+/g, " ").trim();
-    return text.slice(0, 400);
+    return text.slice(0, 1200);
+  }
+
+  // Walk up from the clicked element to find the most informative ancestor
+  // for context capture. Prefers semantic landmarks but falls back to a
+  // sufficiently large container so heavily-virtualized dApps still get text.
+  function pickContextRoot(btn) {
+    var landmark = btn.closest("section, [role='dialog'], [role='form'], form, main, article");
+    if (landmark instanceof HTMLElement && (landmark.innerText || "").length > 40) return landmark;
+    // Walk up to find an ancestor with substantial text content (>120 chars).
+    var node = btn.parentElement;
+    var hops = 0;
+    while (node && hops < 8) {
+      if (node instanceof HTMLElement) {
+        var len = (node.innerText || "").length;
+        if (len > 120 && len < 4000) return node;
+      }
+      node = node.parentElement;
+      hops += 1;
+    }
+    return document.body;
   }
 
   // Track the last meaningful click on the page so we can attribute the wallet
@@ -73,7 +95,7 @@
       label = (label || "").trim().slice(0, 120);
       if (!label) return;
 
-      var section = btn.closest("section, [role='dialog'], [role='form'], form, main") || document.body;
+      var section = pickContextRoot(btn);
 
       // Section heading: nearest H1/H2/H3 ancestor or sibling. Helps disambiguate
       // generic labels like "Confirm" by their dialog/section.
