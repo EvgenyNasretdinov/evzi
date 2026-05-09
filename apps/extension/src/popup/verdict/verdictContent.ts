@@ -8,10 +8,23 @@ export const CHECKLIST_SUBTITLE_FALLBACK = "";
 
 export type VerdictCheckSeverity = "pass" | "caution" | "fail";
 
+/** Where a checklist row's evidence came from. Surfaced as a small chip
+ * next to the title so users can see which check produced the signal —
+ * teaching value + transparency. */
+export type VerdictRowSource =
+  | "decoder"    // calldata / typed-data → DecodedAction
+  | "registry"   // hand-curated protocol registry hit
+  | "sourcify"   // Sourcify verification, proxy resolution, NatSpec userdoc
+  | "tenderly"   // transaction simulation
+  | "origin"     // origin-trust (known-dApps, lookalike, punycode)
+  | "findings"   // deterministic findings (UNLIMITED_APPROVAL, etc.)
+  | "agent";     // LLM judgment
+
 export interface VerdictChecklistRow {
   severity: VerdictCheckSeverity;
   title: string;
   description: string;
+  source?: VerdictRowSource;
 }
 
 export function tierToEyeStatus(tier: VerdictTier): EvziEyeStatus {
@@ -54,6 +67,7 @@ function checklistFromJudgeInput(input: JudgeInput): VerdictChecklistRow[] {
       severity: "pass",
       title: `Decoded as ${d.protocol} swap`,
       description: `Command sequence: ${cmds}.`,
+      source: "decoder",
     });
   } else if (d.kind === "approve") {
     rows.push({
@@ -62,6 +76,7 @@ function checklistFromJudgeInput(input: JudgeInput): VerdictChecklistRow[] {
       description: d.isUnlimited
         ? `Unlimited approval to ${shortAddr(d.spender)}. Anyone holding the spender contract could move all of this token from your wallet, anytime.`
         : `Approve ${d.amount} to ${shortAddr(d.spender)}.`,
+      source: "decoder",
     });
   } else if (d.kind === "setApprovalForAll") {
     rows.push({
@@ -70,12 +85,14 @@ function checklistFromJudgeInput(input: JudgeInput): VerdictChecklistRow[] {
       description: d.approved
         ? `Operator ${shortAddr(d.operator)} can move ANY token in collection ${shortAddr(d.collection)}.`
         : `Revoking operator ${shortAddr(d.operator)} on collection ${shortAddr(d.collection)}.`,
+      source: "decoder",
     });
   } else if (d.kind === "permit") {
     rows.push({
       severity: "caution",
       title: "ERC-2612 Permit signature",
       description: `If signed, ${shortAddr(d.spender)} can spend ${d.amount} of token ${shortAddr(d.token)}.`,
+      source: "decoder",
     });
   } else if (d.kind === "permit2Transfer") {
     const tokens = d.permitted.length;
@@ -83,24 +100,28 @@ function checklistFromJudgeInput(input: JudgeInput): VerdictChecklistRow[] {
       severity: "caution",
       title: `Permit2 ${tokens > 1 ? "batch " : ""}transfer authorization`,
       description: `${shortAddr(d.spender)} would be authorized to move ${tokens} token${tokens === 1 ? "" : "s"} on your behalf.`,
+      source: "decoder",
     });
   } else if (d.kind === "seaportOrder") {
     rows.push({
       severity: "caution",
       title: "Seaport marketplace order",
       description: `Sign-only order: ${d.offer.length} offered → ${d.consideration.length} consideration item${d.consideration.length === 1 ? "" : "s"}.`,
+      source: "decoder",
     });
   } else if (d.kind === "transfer") {
     rows.push({
       severity: "pass",
       title: "Direct token transfer",
       description: `${d.amount} of ${shortAddr(d.token)} to ${shortAddr(d.to)}.`,
+      source: "decoder",
     });
   } else if (d.kind === "lendingAction") {
     rows.push({
       severity: "pass",
       title: `Decoded as ${d.protocol} ${d.verb}`,
       description: `${d.verb} ${d.amount} of ${shortAddr(d.asset)} on the ${d.protocol} pool${d.onBehalfOf ? ` (on behalf of ${shortAddr(d.onBehalfOf)})` : ""}.`,
+      source: "decoder",
     });
   } else if (d.kind === "generic") {
     // ABI-decoded fallback. Format args as name=value when names are present;
@@ -120,12 +141,14 @@ function checklistFromJudgeInput(input: JudgeInput): VerdictChecklistRow[] {
       description: argPairs.length > 0
         ? `Arguments: ${argPairs.join(", ")}.`
         : `No arguments. Decoded from the contract's ABI (Sourcify-provided).`,
+      source: "decoder",
     });
   } else {
     rows.push({
       severity: "caution",
       title: "Calldata could not be decoded",
       description: `Selector ${"selector" in d ? d.selector : "?"} doesn't match any known shape. The agent reasons from the contract address and simulation alone.`,
+      source: "decoder",
     });
   }
 
@@ -137,6 +160,7 @@ function checklistFromJudgeInput(input: JudgeInput): VerdictChecklistRow[] {
       severity: "pass",
       title: "What the contract author says it does",
       description: c.authorIntent.contract,
+      source: "sourcify",
     });
   }
   if (c.authorIntent?.method) {
@@ -144,6 +168,7 @@ function checklistFromJudgeInput(input: JudgeInput): VerdictChecklistRow[] {
       severity: "pass",
       title: "What this specific function says about itself",
       description: c.authorIntent.method,
+      source: "sourcify",
     });
   }
 
@@ -154,18 +179,21 @@ function checklistFromJudgeInput(input: JudgeInput): VerdictChecklistRow[] {
         severity: "pass",
         title: `Trusted ${c.knownProtocol.protocol} contract`,
         description: `Address matches our registry of canonical ${c.knownProtocol.protocol} deployments and Sourcify verifies the source code (perfect match).`,
+        source: "registry",
       });
     } else if (c.verified && isPartialMatch(c.matchType)) {
       rows.push({
         severity: "pass",
         title: `Trusted ${c.knownProtocol.protocol} contract`,
         description: `Address matches our registry of canonical ${c.knownProtocol.protocol} deployments. Sourcify match is "partial" (compiler settings differ slightly), which is normal for ${c.knownProtocol.protocol}.`,
+        source: "registry",
       });
     } else {
       rows.push({
         severity: "pass",
         title: `Trusted ${c.knownProtocol.protocol} · ${c.knownProtocol.name}`,
         description: `This address matches our hand-curated registry of canonical ${c.knownProtocol.protocol} deployments. Sourcify doesn't list it as verified — that's common for ${c.knownProtocol.protocol} contracts on this chain — but the registry match is enough to trust the address.`,
+        source: "registry",
       });
     }
   } else if (c.verified && isExactMatch(c.matchType)) {
@@ -173,18 +201,21 @@ function checklistFromJudgeInput(input: JudgeInput): VerdictChecklistRow[] {
       severity: "pass",
       title: "Sourcify: perfect match",
       description: `Sourcify confirms the deployed bytecode matches verified source${c.contractName ? ` (${c.contractName})` : ""}.`,
+      source: "sourcify",
     });
   } else if (c.verified && isPartialMatch(c.matchType)) {
     rows.push({
       severity: "caution",
       title: "Sourcify: partial match",
       description: `Sourcify has source for this contract${c.contractName ? ` (${c.contractName})` : ""} but compiler settings differ from the canonical match. Usually safe but worth noting.`,
+      source: "sourcify",
     });
   } else {
     rows.push({
       severity: "caution",
       title: "Sourcify: not verified",
       description: `Sourcify doesn't have this contract's source code. Without source, we can't independently confirm what it does.`,
+      source: "sourcify",
     });
   }
 
@@ -194,12 +225,14 @@ function checklistFromJudgeInput(input: JudgeInput): VerdictChecklistRow[] {
       severity: "caution",
       title: "Simulation: skipped",
       description: "Tenderly isn't configured (or not applicable for signature requests). The agent reasons from calldata and contract trust alone.",
+      source: "tenderly",
     });
   } else if (!sim.success) {
     rows.push({
       severity: "fail",
       title: "Simulation failed",
       description: sim.failureReason ?? "The transaction would revert. Signing it as-is wastes gas and accomplishes nothing.",
+      source: "tenderly",
     });
   } else {
     const ne = input.netEffect;
@@ -221,6 +254,7 @@ function checklistFromJudgeInput(input: JudgeInput): VerdictChecklistRow[] {
       severity: "pass",
       title: `Simulation succeeded · ${sim.assetChanges.length} asset change${sim.assetChanges.length === 1 ? "" : "s"}`,
       description: `${netLine} Gas used: ${sim.gasUsed}.`,
+      source: "tenderly",
     });
   }
 
@@ -231,18 +265,21 @@ function checklistFromJudgeInput(input: JudgeInput): VerdictChecklistRow[] {
         severity: "pass",
         title: "Output goes to your wallet",
         description: "The decoded recipient resolves to your address (Uniswap MSG_SENDER sentinel).",
+        source: "decoder",
       });
     } else if (d.recipientKind === "router_self") {
       rows.push({
         severity: "pass",
         title: "Output handed back to the router",
         description: "Uniswap convention: 0x…0002 means 'route output stays on the router for the next command' (typically UNWRAP_WETH followed by transfer to your wallet). Not a third-party drain.",
+        source: "decoder",
       });
     } else if (d.recipientKind === "third_party") {
       rows.push({
         severity: "fail",
         title: "Output goes to a third party",
         description: `Recipient ${shortAddr(d.recipient)} is neither your wallet nor a router-self sentinel. Check carefully.`,
+        source: "decoder",
       });
     }
   }
@@ -254,18 +291,21 @@ function checklistFromJudgeInput(input: JudgeInput): VerdictChecklistRow[] {
       severity: "pass",
       title: `Origin: ${o.knownDappMatch.name} (verified)`,
       description: `Page is served from a domain we recognise as ${o.knownDappMatch.name}. The expected domains are ${o.knownDappMatch.expectedDomains.join(", ")}.`,
+      source: "origin",
     });
   } else if (o.punycode) {
     rows.push({
       severity: "fail",
       title: "Origin: punycode-encoded hostname",
       description: `The page hostname uses xn-- punycode labels — a classic lookalike-domain phishing pattern. Wallets often display the visually-similar Unicode form.`,
+      source: "origin",
     });
   } else if (o.lookalikeOf) {
     rows.push({
       severity: "fail",
       title: `Origin: lookalike of ${o.lookalikeOf}`,
       description: `The page hostname is very close to a known ${o.lookalikeOf} domain but isn't it. Likely phishing.`,
+      source: "origin",
     });
   } else if (o.origin) {
     // Unknown origin — informational, not bad. Only show when we have something.
@@ -273,6 +313,7 @@ function checklistFromJudgeInput(input: JudgeInput): VerdictChecklistRow[] {
       severity: "caution",
       title: `Origin: ${o.origin}`,
       description: `We don't recognise this dApp. That doesn't mean it's malicious — but check the URL carefully and look for other red flags above.`,
+      source: "origin",
     });
   }
 
@@ -285,6 +326,7 @@ function checklistFromJudgeInput(input: JudgeInput): VerdictChecklistRow[] {
       severity: severityFromReason(f.severity),
       title: f.text,
       description: `Deterministic check (${f.code}).`,
+      source: "findings",
     });
   }
 
@@ -308,6 +350,7 @@ function appendLlmReasons(rows: VerdictChecklistRow[], verdict: JudgeVerdict): V
       severity: severityFromReason(r.severity),
       title: text,
       description: "",
+      source: "agent",
     });
   }
   return out;

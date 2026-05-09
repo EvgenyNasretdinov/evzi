@@ -17,6 +17,30 @@ function RowIcon({ row }: { row: VerdictChecklistRow }) {
   return <CircleAlert className="h-4 w-4 shrink-0 text-[#F77579]" aria-hidden />;
 }
 
+const SOURCE_LABEL: Record<NonNullable<VerdictChecklistRow["source"]>, string> = {
+  decoder: "Decoder",
+  registry: "Registry",
+  sourcify: "Sourcify",
+  tenderly: "Tenderly",
+  origin: "Origin",
+  findings: "Check",
+  agent: "Agent",
+};
+
+/** Tiny attribution chip — tells the user which check produced this row.
+ * Quiet styling so it doesn't compete with the severity icon or the title. */
+function SourceChip({ source }: { source?: VerdictChecklistRow["source"] }) {
+  if (!source) return null;
+  return (
+    <span
+      className="inline-flex h-[18px] shrink-0 items-center rounded-sm border border-border bg-muted/40 px-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+      title={`Signal source: ${SOURCE_LABEL[source]}`}
+    >
+      {SOURCE_LABEL[source]}
+    </span>
+  );
+}
+
 export interface VerdictScreenProps {
   eyeStatus: EvziEyeStatus;
   title: string;
@@ -126,8 +150,11 @@ export function VerdictScreen({
                 <span className="inline-flex shrink-0 pt-px" aria-hidden>
                   <RowIcon row={row} />
                 </span>
-                <div className="min-w-0 space-y-1">
-                  <p className="text-[14px] font-medium leading-5 text-foreground">{row.title}</p>
+                <div className="min-w-0 flex-1 space-y-1">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="min-w-0 text-[14px] font-medium leading-5 text-foreground">{row.title}</p>
+                    <SourceChip source={row.source} />
+                  </div>
                   {row.description.trim().length > 0 && (
                     <p className="text-[14px] font-normal leading-5 text-neutral-600">
                       {row.description}
