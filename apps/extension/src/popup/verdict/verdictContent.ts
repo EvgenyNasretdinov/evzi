@@ -1,4 +1,5 @@
 import type { EvziEyeStatus } from "@/popup/components/EvziEyeLogo";
+import { formatTokenAmount } from "@intent-check/token-metadata";
 import type { JudgeInput, JudgeVerdict, VerdictTier } from "@intent-check/types";
 
 /** Legacy export kept for any importers; the new path drops fallbacks entirely. */
@@ -160,8 +161,15 @@ function checklistFromJudgeInput(input: JudgeInput): VerdictChecklistRow[] {
     const ne = input.netEffect;
     const netLine = ne && ne.deltas.length > 0
       ? "Net effect: " + ne.deltas.map((d2) => {
-          const sign = d2.amount.startsWith("-") ? "−" : "+";
           const sym = d2.symbol ?? shortAddr(d2.token);
+          if (typeof d2.decimals === "number") {
+            // formatTokenAmount handles sign internally; "−" is rendered for negatives.
+            const human = formatTokenAmount(d2.amount, d2.decimals);
+            const prefix = human.startsWith("−") ? "" : "+";
+            return `${prefix}${human} ${sym}`;
+          }
+          // No decimals available — fall back to raw integer with explicit +/−.
+          const sign = d2.amount.startsWith("-") ? "−" : "+";
           return `${sign}${d2.amount.replace(/^-/, "")} ${sym}`;
         }).join(", ")
       : "No net change to your wallet.";
