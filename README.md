@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="./assets/Eye.png" alt="Evzi logo" width="120" />
+</p>
+
 # Evzi
 
 > **Understands what you're trying to do, runs every safety check that matters, and explains why — before you sign.**
@@ -15,24 +19,7 @@ domain against known phishing patterns, and asks an LLM judge to compare
 everything against the stated intent. The verdict is one sentence + a
 checklist of every signal we considered:
 
-```
-┌─────────────────────────────────────────┐
-│ All looks good                          │
-│ This looks like a normal Uniswap swap.  │
-│                                         │
-│ ✓ Decoded as Uniswap swap               │
-│   V3_SWAP_EXACT_IN → UNWRAP_WETH        │
-│ ✓ Trusted Uniswap UniversalRouter v2    │
-│ ✓ Simulation succeeded · 5 changes      │
-│   Net effect: −0.0007 ETH, +8.65 OP     │
-│ ✓ Output goes to your wallet            │
-│ ✓ Origin: Uniswap (verified)            │
-│                                         │
-│ [ Continue signing ]   [ Reject ]       │
-│                                         │
-│ Judge: openai · gpt-5.4                 │
-└─────────────────────────────────────────┘
-```
+![Evzi popup catching a fake "free NFT mint" that's actually an unlimited USDC approval](./assets/screenshots/popup-fake-mint.jpeg)
 
 ## Why a checklist, not a verdict
 
