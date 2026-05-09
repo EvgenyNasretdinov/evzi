@@ -25,8 +25,11 @@ export interface VerdictScreenProps {
   primaryLabel: string;
   secondaryLabel: string;
   rawDataText: string;
+  /** Optional footer line shown at the very bottom (e.g. "Judge: openai · gpt-5.4"). */
+  footerLabel?: string;
   onPrimary: () => void;
   onSecondary: () => void;
+  /** When undefined, the "Talk to Evzi" button is hidden entirely. */
   onTalkToEvzi?: () => void;
   onClose?: () => void;
   className?: string;
@@ -40,6 +43,7 @@ export function VerdictScreen({
   primaryLabel,
   secondaryLabel,
   rawDataText,
+  footerLabel,
   onPrimary,
   onSecondary,
   onTalkToEvzi,
@@ -88,15 +92,17 @@ export function VerdictScreen({
             <h1 className="font-heading text-2xl font-bold leading-8 tracking-tight text-foreground">{title}</h1>
             <p className="whitespace-pre-line text-sm leading-5 text-neutral-800">{description}</p>
           </div>
-          <Button
-            type="button"
-            variant="outline"
-            className="h-8 w-fit gap-1.5 rounded-md border-border px-2.5 text-sm font-medium shadow-sm"
-            onClick={() => onTalkToEvzi?.()}
-          >
-            <MessageCircle className="h-4 w-4" aria-hidden />
-            Talk to Evzi.
-          </Button>
+          {onTalkToEvzi && (
+            <Button
+              type="button"
+              variant="outline"
+              className="h-8 w-fit gap-1.5 rounded-md border-border px-2.5 text-sm font-medium shadow-sm"
+              onClick={onTalkToEvzi}
+            >
+              <MessageCircle className="h-4 w-4" aria-hidden />
+              Talk to Evzi.
+            </Button>
+          )}
         </div>
 
         <Separator />
@@ -178,6 +184,12 @@ export function VerdictScreen({
             </div>
           </Collapsible>
         </div>
+
+        {footerLabel && (
+          <p className="border-t bg-muted/20 px-4 py-2 text-[10px] uppercase tracking-wide text-muted-foreground">
+            {footerLabel}
+          </p>
+        )}
       </div>
     </section>
   );

@@ -260,6 +260,16 @@ export function PopupView({ id, state, judgeInfo, onIntentConfirm, onReject, onA
   const rawDataText = formatJudgeInputRaw(state.judgeInput, state.origin);
   const dangerPrimaryIsReject = state.verdict.tier === "DANGER";
 
+  // Compose the same "Judge: openai · gpt-5.4" line we used to render via
+  // JudgeInfoFooter. Pass into VerdictScreen so it sits inside the surface
+  // border and matches the designer's visual rhythm.
+  let judgeFooterLabel: string | undefined;
+  if (judgeInfo) {
+    if (judgeInfo.provider === "stub") judgeFooterLabel = "Judge: stub mode";
+    else if (judgeInfo.provider === "none") judgeFooterLabel = "Judge: no LLM configured";
+    else judgeFooterLabel = `Judge: ${judgeInfo.provider}${judgeInfo.model ? ` · ${judgeInfo.model}` : ""}`;
+  }
+
   return (
     <div className="w-[min(420px,100vw)] bg-transparent p-1.5">
       <VerdictScreen
@@ -270,6 +280,7 @@ export function PopupView({ id, state, judgeInfo, onIntentConfirm, onReject, onA
         primaryLabel={model.primaryLabel}
         secondaryLabel={model.secondaryLabel}
         rawDataText={rawDataText}
+        footerLabel={judgeFooterLabel}
         onPrimary={() => (dangerPrimaryIsReject ? onReject(id) : onApprove(id))}
         onSecondary={() => (dangerPrimaryIsReject ? onApprove(id) : onReject(id))}
         onTalkToEvzi={onTalkToEvzi}
