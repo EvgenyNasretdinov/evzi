@@ -95,6 +95,12 @@ function checklistFromJudgeInput(input: JudgeInput): VerdictChecklistRow[] {
       title: "Direct token transfer",
       description: `${d.amount} of ${shortAddr(d.token)} to ${shortAddr(d.to)}.`,
     });
+  } else if (d.kind === "lendingAction") {
+    rows.push({
+      severity: "pass",
+      title: `Decoded as ${d.protocol} ${d.verb}`,
+      description: `${d.verb} ${d.amount} of ${shortAddr(d.asset)} on the ${d.protocol} pool${d.onBehalfOf ? ` (on behalf of ${shortAddr(d.onBehalfOf)})` : ""}.`,
+    });
   } else {
     rows.push({
       severity: "caution",

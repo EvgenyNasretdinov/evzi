@@ -94,6 +94,32 @@ deterministic layer already cleared the transaction is wasted output.
 When findings already include warnings or dangers, your job is to summarize them
 in plain English in the headline — not to second-guess them.
 
+# Origin trust signals (deterministic)
+
+Two findings come from the bundled known-dApp directory + Levenshtein/punycode
+checks:
+
+- LOOKALIKE_DOMAIN: the page hostname is within edit-distance 2 of a known
+  dApp's registrable domain but isn't it. Almost always phishing — the
+  decoded action could be perfectly normal calldata, but if it's served
+  from \`unisvvap.org\` instead of \`uniswap.org\`, the dApp itself is
+  malicious. Treat as DANGER and lead the headline with that fact.
+- PUNYCODE_DOMAIN: the page hostname has \`xn--\` labels — internationalized
+  domain encoding, used to disguise non-ASCII glyphs that visually resemble
+  ASCII letters (\`аpp.uniswap.org\` with a Cyrillic 'а'). Same treatment as
+  LOOKALIKE_DOMAIN.
+
+# Aave / lending actions
+
+When decoded.kind === "lendingAction" the user is interacting with a lending
+market (Aave v3). Verbs: supply / withdraw / borrow / repay. The trust ceiling
+applies when decoded.trusted is true and the address is in the registry.
+
+The thing to watch for: an unusual \`onBehalfOf\` address. Legit users supply or
+borrow on behalf of themselves; an onBehalfOf set to a third party is the
+"deposit my funds into someone else's lending position" attack pattern. Mention
+it explicitly in the headline if it differs from the sender.
+
 # EIP-712 typed-data signatures (NOT transactions)
 
 Some requests are signature requests, not transactions. They appear as:

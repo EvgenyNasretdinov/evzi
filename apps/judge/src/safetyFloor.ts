@@ -19,7 +19,10 @@ function findingsTier(findings: Finding[]): VerdictTier {
  * still benefit from the trust ceiling, as long as the address is whitelisted.
  */
 function isDeterministicallyTrusted(input: JudgeInput): boolean {
-  const trustedByDecoder = input.decoded.kind === "swap" && input.decoded.trusted === true;
+  const d = input.decoded;
+  const trustedByDecoder =
+    (d.kind === "swap" && d.trusted === true) ||
+    (d.kind === "lendingAction" && d.trusted === true);
   const trustedByRegistry = input.contract.knownProtocol !== undefined;
   if (!trustedByDecoder && !trustedByRegistry) return false;
   if (!input.sim || !input.sim.success) return false;
