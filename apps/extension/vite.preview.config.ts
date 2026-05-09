@@ -2,15 +2,19 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import { crx } from "@crxjs/vite-plugin";
-import manifest from "./manifest.config";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+/** Plain Vite app (no CRX) for fast localhost UI work with HMR. */
 export default defineConfig({
-  plugins: [react(), crx({ manifest })],
+  plugins: [react()],
+  root: __dirname,
   resolve: {
     alias: { "@": path.resolve(__dirname, "src") },
   },
-  build: { rollupOptions: { input: { popup: "src/popup/index.html" } } },
+  server: {
+    port: 5174,
+    strictPort: true,
+    open: "/preview/",
+  },
 });

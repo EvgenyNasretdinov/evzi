@@ -7,6 +7,7 @@
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
     "dev:extension": "pnpm --filter ./apps/extension dev",
+    "dev:extension:preview": "pnpm --filter ./apps/extension dev:preview",
     "dev:judge": "pnpm --filter ./apps/judge dev"
   },
   "devDependencies": {

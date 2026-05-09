@@ -1,17 +1,20 @@
 import type { VerdictTier } from "@intent-check/types";
+import { cn } from "@/lib/utils";
 
-const colors: Record<VerdictTier, string> = {
-  SAFE: "#1a7f37",
-  CAUTION: "#9a6700",
-  DANGER: "#cf222e",
+const tierClass: Record<VerdictTier, string> = {
+  SAFE: "bg-emerald-600 text-white",
+  CAUTION: "bg-amber-600 text-white",
+  DANGER: "bg-destructive text-destructive-foreground",
 };
 
 export function VerdictChip({ tier }: { tier: VerdictTier }) {
   return (
-    <span style={{
-      display: "inline-block", padding: "2px 8px", borderRadius: 999,
-      background: colors[tier], color: "white", fontSize: 12, fontWeight: 600, letterSpacing: 0.5,
-    }}>
+    <span
+      className={cn(
+        "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wide",
+        tierClass[tier]
+      )}
+    >
       {tier}
     </span>
   );
