@@ -1,28 +1,13 @@
 import { decodeAbiParameters, decodeFunctionData, getAddress, parseAbi, type Hex } from "viem";
+import { lookupProtocol } from "@intent-check/protocol-registry";
 import type { DecodedAction } from "@intent-check/types";
 
-// Known Uniswap Universal Router deployments. Used as a positive identification
-// signal; we also accept any contract whose calldata starts with the execute()
-// selector and decodes into the expected shape, since UR is deployed across many
-// chains and Uniswap rolls new versions periodically.
-const KNOWN_ROUTERS: Record<number, string[]> = {
-  1: [
-    "0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af",  // UR v2
-    "0xEf1c6E67703c7BD7107eed8303Fbe6EC2554BF6B",  // UR v1
-  ],
-  10:    [
-    "0xCb1355ff08Ab38bBCE60111F1bb2B784bE25D7e8",
-    "0x8B844f885672f333Bc0042cB669255f93a4C1E6b",  // newer optimism UR
-  ],
-  137:   ["0x643770E279d5D0733F21d6DC03A8efbABf3255B4"],  // polygon
-  8453:  ["0x6fF5693b99212Da76ad316178A184AB56D299b43"],  // base
-  42161: ["0x5E325eDA8064b456f4781070C0738d849c824258"],  // arbitrum
-  56:    ["0x4Dae2f939ACf50408e13d58534Ff8c2776d45265"],  // bnb
-};
-
+// Single source of truth for known Uniswap Universal Router deployments lives
+// in `@intent-check/protocol-registry`. The recognizer queries it instead of
+// holding its own table — adding a new chain or version means editing one file.
 function isKnownRouter(chainId: number, to: string): boolean {
-  const list = KNOWN_ROUTERS[chainId] ?? [];
-  return list.some((a) => a.toLowerCase() === to.toLowerCase());
+  const info = lookupProtocol(chainId, to);
+  return info?.protocol === "Uniswap" && info.kind === "router";
 }
 
 // Universal Router ships two top-level entry points across deployments:

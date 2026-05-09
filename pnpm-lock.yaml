@@ -127,6 +127,9 @@ importers:
 
   packages/decoder:
     dependencies:
+      '@intent-check/protocol-registry':
+        specifier: workspace:*
+        version: link:../protocol-registry
       '@intent-check/types':
         specifier: workspace:*
         version: link:../types
