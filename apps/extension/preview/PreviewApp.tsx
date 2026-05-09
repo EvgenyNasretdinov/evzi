@@ -44,6 +44,8 @@ export function PreviewApp() {
   const [scenario, setScenario] = useState<PreviewScenario>(() => readScenarioFromLocation() ?? "idle");
   const [layoutOnly, setLayoutOnly] = useState(false);
   const [eyeStatus, setEyeStatus] = useState<EvziEyeStatus>("blue");
+  const [chatPreviewTrigger, setChatPreviewTrigger] = useState(0);
+  const [chatPreviewMode, setChatPreviewMode] = useState<"empty" | "demo">("empty");
   const { id, state } = scenarioToHost(scenario);
 
   useEffect(() => {
@@ -70,6 +72,31 @@ export function PreviewApp() {
                   {s.label}
                 </Button>
               ))}
+            </div>
+            <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
+              <span className="w-full text-xs font-medium text-muted-foreground">Chat (same widget)</span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setChatPreviewMode("empty");
+                  setChatPreviewTrigger((n) => n + 1);
+                }}
+              >
+                Chat · empty
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setChatPreviewMode("demo");
+                  setChatPreviewTrigger((n) => n + 1);
+                }}
+              >
+                Chat · demo thread
+              </Button>
             </div>
             <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
               <Button type="button" variant={layoutOnly ? "default" : "outline"} size="sm" onClick={() => setLayoutOnly((v) => !v)}>
@@ -107,6 +134,8 @@ export function PreviewApp() {
               onReject={(requestId) => console.log("[preview] reject", requestId)}
               onApprove={(requestId) => console.log("[preview] approve", requestId)}
               onTalkToEvzi={() => console.log("[preview] talk to Evzi")}
+              chatPreviewTrigger={chatPreviewTrigger}
+              chatPreviewMode={chatPreviewMode}
             />
           )}
         </div>
