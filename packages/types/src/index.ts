@@ -30,7 +30,7 @@ export interface TokenAmount {
 
 // Decoded structured action from calldata.
 export type DecodedAction =
-  | { kind: "swap"; tokenIn: TokenAmount; tokenOut: TokenAmount; minAmountOut: string; recipient: string; router: string; protocol: string }
+  | { kind: "swap"; tokenIn: TokenAmount; tokenOut: TokenAmount; minAmountOut: string; recipient: string; router: string; protocol: string; trusted?: boolean }
   | { kind: "approve"; token: string; spender: string; amount: string; isUnlimited: boolean }
   | { kind: "setApprovalForAll"; collection: string; operator: string; approved: boolean }
   | { kind: "transfer"; token: string; to: string; amount: string }
@@ -74,6 +74,7 @@ export interface ContractMeta {
   chainId: number;
   verified: boolean;
   sourceProvider?: "sourcify" | "etherscan";
+  matchType?: "perfect" | "partial";
   contractName?: string;
   isProxy: boolean;
   implementation?: string;

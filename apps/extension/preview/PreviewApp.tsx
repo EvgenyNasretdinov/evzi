@@ -36,6 +36,7 @@ export function PreviewApp() {
           <PopupView
             id={id}
             state={state}
+            judgeInfo={{ provider: "openai", model: "gpt-5.2" }}
             onIntentConfirm={(requestId, intent) => console.log("[preview] intent confirmed", requestId, intent)}
             onReject={(requestId) => console.log("[preview] reject", requestId)}
             onApprove={(requestId) => console.log("[preview] approve", requestId)}

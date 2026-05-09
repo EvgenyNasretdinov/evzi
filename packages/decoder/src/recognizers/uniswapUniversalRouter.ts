@@ -57,8 +57,7 @@ export function tryDecodeUniversalRouter(input: { chainId: number; to: string; d
 
   // Selector match is enough to attempt decode; if args don't fit the UR shape
   // the try/catch below sends us back to the next recognizer / unknown fallback.
-  const known = isKnownRouter(input.chainId, input.to);
-  void known; // currently unused; downstream may want to surface a "trusted router" signal.
+  const trusted = isKnownRouter(input.chainId, input.to);
 
   try {
     const { args } = decodeFunctionData({ abi: UR_ABI, data: input.data as Hex });
@@ -84,6 +83,7 @@ export function tryDecodeUniversalRouter(input: { chainId: number; to: string; d
         recipient: getAddress(recipient as string),
         router: getAddress(input.to),
         protocol: "Uniswap",
+        trusted,
       };
     }
 
@@ -96,6 +96,7 @@ export function tryDecodeUniversalRouter(input: { chainId: number; to: string; d
       recipient: getAddress(input.to),
       router: getAddress(input.to),
       protocol: "Uniswap",
+      trusted,
     };
   } catch {
     return null;

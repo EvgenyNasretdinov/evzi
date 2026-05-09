@@ -1,7 +1,7 @@
 import { Shield } from "lucide-react";
 import { VerdictChip } from "./components/VerdictChip";
 import { IntentConfirm } from "./components/IntentConfirm";
-import type { JudgeVerdict, DecodedAction, UserIntent, JudgeInput } from "@intent-check/types";
+import type { JudgeVerdict, DecodedAction, UserIntent, JudgeInput, ContractMeta, SimResult } from "@intent-check/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -12,6 +12,39 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+
+function ContractTrust({ contract, trusted }: { contract: ContractMeta; trusted: boolean }) {
+  let label: string;
+  let tone: "ok" | "warn" | "bad";
+  if (trusted) {
+    label = `Trusted ${contract.contractName ?? "known protocol"}`;
+    tone = "ok";
+  } else if (contract.verified && contract.matchType === "perfect") {
+    label = `Sourcify perfect match${contract.contractName ? ` · ${contract.contractName}` : ""}`;
+    tone = "ok";
+  } else if (contract.verified && contract.matchType === "partial") {
+    label = `Sourcify partial match${contract.contractName ? ` · ${contract.contractName}` : ""}`;
+    tone = "warn";
+  } else {
+    label = "Contract not verified on Sourcify";
+    tone = "warn";
+  }
+  const cls =
+    tone === "ok" ? "text-emerald-700 dark:text-emerald-400"
+    : tone === "warn" ? "text-amber-700 dark:text-amber-400"
+    : "text-destructive";
+  return <p className={cls}>{label}</p>;
+}
+
+function SimulationStatus({ sim }: { sim?: SimResult }) {
+  if (!sim) {
+    return <p className="text-muted-foreground">Simulation skipped (Tenderly not configured).</p>;
+  }
+  if (!sim.success) {
+    return <p className="text-destructive">Simulation failed{sim.failureReason ? `: ${sim.failureReason}` : ""}.</p>;
+  }
+  return <p className="text-emerald-700 dark:text-emerald-400">Simulated successfully · {sim.assetChanges.length} asset change{sim.assetChanges.length === 1 ? "" : "s"} · gas {sim.gasUsed}</p>;
+}
 
 export interface AwaitingConfirmState {
   phase: "awaiting_confirm";
@@ -39,16 +72,35 @@ function reasonClass(severity: JudgeVerdict["reasons"][number]["severity"]) {
   return "text-muted-foreground";
 }
 
+export interface JudgeInfo {
+  provider: "stub" | "openai" | "anthropic" | "none";
+  model?: string;
+}
+
 export interface PopupViewProps {
   id: string | null;
   state: PopupState | null;
+  judgeInfo?: JudgeInfo | null;
   onIntentConfirm: (id: string, intent: UserIntent) => void;
   onReject: (id: string) => void;
   onApprove: (id: string) => void;
 }
 
+function JudgeInfoFooter({ info }: { info?: JudgeInfo | null }) {
+  if (!info) return null;
+  let label: string;
+  if (info.provider === "stub") label = "stub mode";
+  else if (info.provider === "none") label = "no LLM configured";
+  else label = `${info.provider}${info.model ? ` · ${info.model}` : ""}`;
+  return (
+    <p className="border-t bg-muted/20 px-4 py-2 text-[10px] uppercase tracking-wide text-muted-foreground">
+      Judge: {label}
+    </p>
+  );
+}
+
 /** Shared popup UI used by the extension and the web preview dev server. */
-export function PopupView({ id, state, onIntentConfirm, onReject, onApprove }: PopupViewProps) {
+export function PopupView({ id, state, judgeInfo, onIntentConfirm, onReject, onApprove }: PopupViewProps) {
   if (!state || !id) {
     return (
       <div className="w-[380px] bg-background p-3">
@@ -67,6 +119,7 @@ export function PopupView({ id, state, onIntentConfirm, onReject, onApprove }: P
           <CardContent className="pb-6 pt-0">
             <p className="text-sm text-muted-foreground">No active request. Trigger a transaction from a supported dapp to see analysis here.</p>
           </CardContent>
+          <JudgeInfoFooter info={judgeInfo} />
         </Card>
       </div>
     );
@@ -83,6 +136,7 @@ export function PopupView({ id, state, onIntentConfirm, onReject, onApprove }: P
           <CardContent className="pt-0">
             <IntentConfirm initial={state.baseDraft.intent} onConfirm={(intent) => onIntentConfirm(id, intent)} />
           </CardContent>
+          <JudgeInfoFooter info={judgeInfo} />
         </Card>
       </div>
     );
@@ -119,6 +173,8 @@ export function PopupView({ id, state, onIntentConfirm, onReject, onApprove }: P
                 <DialogDescription>Decoded call and simulation snapshot for this request.</DialogDescription>
               </DialogHeader>
               <div className="space-y-3 text-xs">
+                <ContractTrust contract={state.judgeInput.contract} trusted={state.judgeInput.decoded.kind === "swap" && state.judgeInput.decoded.trusted === true} />
+                <SimulationStatus sim={state.judgeInput.sim} />
                 <pre className="whitespace-pre-wrap rounded-md border bg-muted/50 p-3 font-mono leading-relaxed">{JSON.stringify(state.judgeInput.decoded, null, 2)}</pre>
                 {state.judgeInput.sim && (
                   <pre className="whitespace-pre-wrap rounded-md border bg-muted/50 p-3 font-mono leading-relaxed">
@@ -138,6 +194,7 @@ export function PopupView({ id, state, onIntentConfirm, onReject, onApprove }: P
             {state.verdict.tier === "DANGER" ? "Blocked" : "Sign"}
           </Button>
         </CardFooter>
+        <JudgeInfoFooter info={judgeInfo} />
       </Card>
     </div>
   );

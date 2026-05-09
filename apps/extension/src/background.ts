@@ -46,15 +46,19 @@ async function clearState(id: string) {
 
 function inferIntent(snapshot: PageSnapshot): UserIntent {
   const text = [snapshot.title, snapshot.ogTitle, snapshot.ogSiteName, snapshot.visibleButtonText].filter(Boolean).join(" | ").toLowerCase();
-  if (/swap/.test(text))           return { kind: "swap",    summary: snapshot.title ?? "Swap on this dApp",    confidence: 0.6 };
-  if (/approve/.test(text))        return { kind: "approve", summary: snapshot.title ?? "Approve token",        confidence: 0.5 };
-  if (/mint/.test(text))           return { kind: "mint",    summary: snapshot.title ?? "Mint NFT",             confidence: 0.5 };
-  if (/deposit|stake/.test(text))  return { kind: "deposit", summary: snapshot.title ?? "Deposit",              confidence: 0.5 };
-  if (/bridge/.test(text))         return { kind: "bridge",  summary: snapshot.title ?? "Bridge",               confidence: 0.5 };
+  // Order matters — earlier matches win. Most specific verbs first.
+  if (/\bswap\b|\btrade\b/.test(text))                   return { kind: "swap",     summary: snapshot.title ?? "Swap on this dApp", confidence: 0.6 };
+  if (/\bapprove\b|\ballow\b/.test(text))                return { kind: "approve",  summary: snapshot.title ?? "Approve token",     confidence: 0.5 };
+  if (/\bmint\b/.test(text))                             return { kind: "mint",     summary: snapshot.title ?? "Mint NFT",          confidence: 0.5 };
+  if (/\bsupply\b|\bdeposit\b|\bstake\b|\blend\b/.test(text))
+                                                         return { kind: "deposit",  summary: snapshot.title ?? "Deposit",           confidence: 0.5 };
+  if (/\bbridge\b/.test(text))                           return { kind: "bridge",   summary: snapshot.title ?? "Bridge",            confidence: 0.5 };
+  if (/\bbuy\b|\bpurchase\b|\bcheckout\b/.test(text))    return { kind: "transfer", summary: snapshot.title ?? "Buy / purchase",    confidence: 0.4 };
+  if (/\bsend\b|\btransfer\b/.test(text))                return { kind: "transfer", summary: snapshot.title ?? "Transfer",          confidence: 0.5 };
   return { kind: "other", summary: snapshot.title ?? "Unknown action", confidence: 0.2 };
 }
 
-function deterministicFindings(input: { decoded: JudgeInput["decoded"]; contract: ContractMeta; intent: UserIntent }): Finding[] {
+function deterministicFindings(input: { decoded: JudgeInput["decoded"]; contract: ContractMeta; intent: UserIntent; from?: string }): Finding[] {
   const out: Finding[] = [];
   if (input.decoded.kind === "approve" && input.decoded.isUnlimited) {
     out.push({ code: "UNLIMITED_APPROVAL", severity: "danger", text: `Unlimited approval to ${input.decoded.spender}` });
@@ -62,11 +66,25 @@ function deterministicFindings(input: { decoded: JudgeInput["decoded"]; contract
   if (input.decoded.kind === "setApprovalForAll" && input.decoded.approved) {
     out.push({ code: "SET_APPROVAL_FOR_ALL", severity: "danger", text: `setApprovalForAll on ${input.decoded.collection}` });
   }
-  if (!input.contract.verified) {
+  // Suppress "unverified" warning when calldata decodes as a known protocol with
+  // a recognized router/contract (Sourcify coverage is uneven; relying on it alone
+  // would flag well-known Uniswap routers as suspicious).
+  const isTrustedProtocol = input.decoded.kind === "swap" && input.decoded.trusted === true;
+  if (!input.contract.verified && !isTrustedProtocol) {
     out.push({ code: "UNVERIFIED_CONTRACT", severity: "warn", text: "Target contract is not verified on Sourcify." });
   }
   if (input.intent.kind === "mint" && input.decoded.kind === "approve") {
     out.push({ code: "INTENT_MISMATCH_MINT_VS_APPROVE", severity: "danger", text: "Page looks like a mint but tx is an approval." });
+  }
+  // Swap proceeds going to a third party — high-signal phishing indicator.
+  if (input.decoded.kind === "swap" && input.from) {
+    const sender = input.from.toLowerCase();
+    const recipient = input.decoded.recipient.toLowerCase();
+    // Skip when recipient is the router itself (the low-confidence fallback uses router as recipient).
+    const isRouterSelf = recipient === input.decoded.router.toLowerCase();
+    if (!isRouterSelf && recipient !== sender) {
+      out.push({ code: "SWAP_RECIPIENT_MISMATCH", severity: "warn", text: `Swap proceeds go to ${input.decoded.recipient}, not your wallet.` });
+    }
   }
   return out;
 }
@@ -122,7 +140,15 @@ chrome.runtime.onMessage.addListener((msg: ContentToBackground, sender) => {
       const decoded = await decode({ chainId, to: tx.to, data: tx.data ?? "0x", value: tx.value ?? "0x0" });
       const v = await fetchVerifiedContract({ chainId, address: tx.to });
       const intent = inferIntent(pageSnapshot);
-      const contract: ContractMeta = { address: tx.to, chainId, verified: v.verified, sourceProvider: v.verified ? "sourcify" : undefined, contractName: v.contractName, isProxy: false };
+      const contract: ContractMeta = {
+        address: tx.to,
+        chainId,
+        verified: v.verified,
+        sourceProvider: v.verified ? "sourcify" : undefined,
+        matchType: v.matchType,
+        contractName: v.contractName,
+        isProxy: false,
+      };
 
       await setState(msg.id, { phase: "awaiting_confirm", tabId, baseDraft: { request, origin, pageSnapshot, chainId, decoded, contract, intent } });
       await chrome.action.openPopup().catch(() => {});
@@ -137,7 +163,7 @@ chrome.runtime.onMessage.addListener((msg: ContentToBackground, sender) => {
       if (!tx) return;
 
       const sim = await maybeSimulate(baseDraft.chainId, { from: tx.from, to: tx.to, value: tx.value, data: tx.data });
-      const findings = deterministicFindings({ decoded: baseDraft.decoded, contract: baseDraft.contract, intent: msg.intent });
+      const findings = deterministicFindings({ decoded: baseDraft.decoded, contract: baseDraft.contract, intent: msg.intent, from: tx.from });
       const originSig: OriginSignals = {
         url: baseDraft.pageSnapshot.url, origin: baseDraft.origin,
         pageTitle: baseDraft.pageSnapshot.title, ogTitle: baseDraft.pageSnapshot.ogTitle, ogSiteName: baseDraft.pageSnapshot.ogSiteName,

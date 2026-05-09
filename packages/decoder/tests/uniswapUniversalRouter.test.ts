@@ -45,6 +45,20 @@ describe("uniswap universal router", () => {
     expect(result.minAmountOut).toBe("28000000000000000");
     expect(result.recipient.toLowerCase()).toBe(RECIPIENT.toLowerCase());
     expect(result.router.toLowerCase()).toBe(ROUTER.toLowerCase());
+    expect(result.trusted).toBe(true); // ROUTER is in KNOWN_ROUTERS for chain 8453
+  });
+
+  it("decodes V3 swap on an unknown router with trusted=false", async () => {
+    const UNKNOWN_ROUTER = "0x1234567890123456789012345678901234567890";
+    const path = encodePacked(["address", "uint24", "address"], [USDC, 500, WETH]);
+    const input = buildV3SwapExactInInput(RECIPIENT, 100_000000n, 28_000_000_000_000_000n, path, true);
+    const data = encodeFunctionData({
+      abi: UR_ABI, functionName: "execute",
+      args: ["0x00", [input], BigInt(Math.floor(Date.now() / 1000) + 600)],
+    });
+    const result = await decode({ chainId: 8453, to: UNKNOWN_ROUTER, data, value: "0x0" });
+    if (result.kind !== "swap") throw new Error();
+    expect(result.trusted).toBe(false);
   });
 
   it("returns unknown for execute() with malformed inputs", async () => {
