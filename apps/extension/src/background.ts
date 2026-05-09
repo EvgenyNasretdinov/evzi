@@ -317,7 +317,8 @@ async function maybeSimulate(chainId: number, tx: { from: string; to: string; va
   }
 }
 
-const JUDGE_TIMEOUT_MS = 30_000;
+// gpt-5.5 with reasoning typically takes 10-15s; allow generous headroom.
+const JUDGE_TIMEOUT_MS = 45_000;
 
 async function callJudge(input: JudgeInput): Promise<JudgeVerdict> {
   // AbortController prevents a hanging fetch from leaving the popup stuck on

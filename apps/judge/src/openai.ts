@@ -47,7 +47,9 @@ export async function llmJudgeOpenAI(
         type: "json_schema",
         json_schema: { name: "judge_verdict", strict: true, schema: VERDICT_SCHEMA },
       },
-      max_completion_tokens: 600,
+      // gpt-5.x models burn reasoning tokens against this budget — generous headroom
+      // ensures the JSON output isn't truncated to empty even on a complex case.
+      max_completion_tokens: 4000,
     }),
   });
 
