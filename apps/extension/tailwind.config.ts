@@ -11,6 +11,10 @@ export default {
       screens: { "2xl": "1400px" },
     },
     extend: {
+      fontFamily: {
+        sans: ['"DM Sans"', "ui-sans-serif", "system-ui", "sans-serif"],
+        heading: ['"Space Grotesk"', "ui-sans-serif", "system-ui", "sans-serif"],
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
@@ -50,6 +54,11 @@ export default {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
+      },
+      boxShadow: {
+        /** Extension popup panel: depth without a light “mat” around the window. */
+        popup:
+          "0 1px 2px rgb(0 0 0 / 0.04), 0 4px 16px rgb(0 0 0 / 0.08), 0 16px 40px -12px rgb(0 0 0 / 0.14)",
       },
       keyframes: {
         "accordion-down": {

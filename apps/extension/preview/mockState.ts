@@ -81,6 +81,20 @@ export function scenarioToHost(scenario: PreviewScenario): { id: string | null; 
   }
 
   if (scenario === "judging_sim" || scenario === "judging_llm") {
+    const stepsSim: import("../src/popup/PopupView").JudgingStep[] = [
+      { id: "decoding",   label: "Decoding calldata",            status: "done",    detail: "Uniswap · V3_SWAP_EXACT_IN → UNWRAP_WETH" },
+      { id: "registry",   label: "Looking up known protocol",    status: "done",    detail: "Trusted Uniswap · UniversalRouter v2" },
+      { id: "sourcify",   label: "Checking Sourcify verification", status: "done",  detail: "Partial match" },
+      { id: "simulating", label: "Simulating transaction",       status: "running" },
+      { id: "judging",    label: "Asking the agent for a verdict", status: "pending" },
+    ];
+    const stepsLlm: import("../src/popup/PopupView").JudgingStep[] = [
+      { id: "decoding",   label: "Decoding calldata",            status: "done",    detail: "Uniswap · V3_SWAP_EXACT_IN → UNWRAP_WETH" },
+      { id: "registry",   label: "Looking up known protocol",    status: "done",    detail: "Trusted Uniswap · UniversalRouter v2" },
+      { id: "sourcify",   label: "Checking Sourcify verification", status: "done",  detail: "Partial match" },
+      { id: "simulating", label: "Simulating transaction",       status: "done",    detail: "5 asset changes · gas 126576" },
+      { id: "judging",    label: "Asking the agent for a verdict", status: "running" },
+    ];
     return {
       id: MOCK_ID,
       state: {
@@ -95,7 +109,7 @@ export function scenarioToHost(scenario: PreviewScenario): { id: string | null; 
           isProxy: false,
           contractName: "UniswapV2Router",
         },
-        step: scenario === "judging_sim" ? "fetching_simulation" : "calling_judge",
+        steps: scenario === "judging_sim" ? stepsSim : stepsLlm,
         enteredAt: Date.now(),
       },
     };
