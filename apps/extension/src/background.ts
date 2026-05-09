@@ -596,6 +596,14 @@ chrome.runtime.onMessage.addListener((msg: ContentToBackground, sender) => {
 
       const clickCtx = clickContext ? { text: clickContext.text, ariaLabel: clickContext.ariaLabel, sectionHeading: clickContext.sectionHeading } : undefined;
       await setState(msg.id, { phase: "awaiting_confirm", tabId, baseDraft: { request, origin, pageSnapshot, clickContext: clickCtx, chainId, decoded, contract, intent } });
+      // Visual nudge: bright "!" badge so the user immediately sees the
+      // toolbar icon needs attention. Chrome MV3 won't reliably let us
+      // auto-open the popup from a wallet-hook chain (the user gesture from
+      // the dApp page doesn't propagate through our message hops), so the
+      // badge is the load-bearing UX. We still try openPopup as best-effort.
+      await chrome.action.setBadgeText({ text: "!" }).catch(() => {});
+      await chrome.action.setBadgeBackgroundColor({ color: "#dc2626" }).catch(() => {});
+      await chrome.action.setTitle({ title: "EVZI — review pending request" }).catch(() => {});
       await chrome.action.openPopup().catch(() => {});
       return;
     }
@@ -740,6 +748,9 @@ chrome.runtime.onMessage.addListener((msg: ContentToBackground, sender) => {
       if (!s || s.phase !== "verdict_ready") return;
       chrome.tabs.sendMessage(s.tabId, { kind: "judge_result", id: msg.id, verdict: s.verdict, userDecision: msg.decision } as BackgroundToContent);
       await clearState(msg.id);
+      // Clear the attention badge — request resolved.
+      await chrome.action.setBadgeText({ text: "" }).catch(() => {});
+      await chrome.action.setTitle({ title: "EVZI" }).catch(() => {});
       return;
     }
   })();

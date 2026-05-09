@@ -5,6 +5,7 @@ import { EvziEyeLogo, EvziStatusStripe, type EvziEyeStatus } from "./EvziEyeLogo
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Separator } from "@/components/ui/separator";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 function RowIcon({ row }: { row: VerdictChecklistRow }) {
@@ -17,7 +18,9 @@ function RowIcon({ row }: { row: VerdictChecklistRow }) {
   return <CircleAlert className="h-4 w-4 shrink-0 text-[#F77579]" aria-hidden />;
 }
 
-const SOURCE_LABEL: Record<NonNullable<VerdictChecklistRow["source"]>, string> = {
+type SourceKey = NonNullable<VerdictChecklistRow["source"]>;
+
+const SOURCE_LABEL: Record<SourceKey, string> = {
   decoder: "Decoder",
   registry: "Registry",
   sourcify: "Sourcify",
@@ -27,17 +30,45 @@ const SOURCE_LABEL: Record<NonNullable<VerdictChecklistRow["source"]>, string> =
   agent: "Agent",
 };
 
+/** Hover-hint description per source — explains what the source IS so users
+ * can build intuition about why each row matters. Shown in the tooltip when
+ * the user hovers the chip. */
+const SOURCE_HINT: Record<SourceKey, string> = {
+  decoder:
+    "Local calldata / typed-data decoder. Recognises ERC-20, Uniswap, Aave v3, Permit / Permit2, Seaport, plus a generic ABI fallback. No network call.",
+  registry:
+    "Hand-curated cross-chain whitelist of canonical protocol addresses (Uniswap, Aave, Permit2, Seaport, ENS, WETH, stablecoins). The strongest trust signal — independent of Sourcify.",
+  sourcify:
+    "Public source-code verifier (sourcify.dev). Confirms whether the deployed bytecode matches verified source, resolves proxy implementations, and surfaces NatSpec author notices.",
+  tenderly:
+    "Transaction simulation against a live chain fork. Tells us whether the tx would succeed and what assets actually move in your wallet.",
+  origin:
+    "Origin-trust check. Bundled list of canonical dApp domains plus Levenshtein + punycode lookalike detection.",
+  findings:
+    "Deterministic finding code (UNLIMITED_APPROVAL, PROXY_IMPL_UNVERIFIED, BRAND_NEW_CONTRACT, …). Hard rule, not LLM judgment — the agent can't soften these.",
+  agent:
+    "LLM judgment. Lower-confidence than the deterministic checks above — it can't override hard danger findings, and it can't escalate trusted protocols.",
+};
+
 /** Tiny attribution chip — tells the user which check produced this row.
- * Quiet styling so it doesn't compete with the severity icon or the title. */
+ * Hover the chip to see what that source actually is. */
 function SourceChip({ source }: { source?: VerdictChecklistRow["source"] }) {
   if (!source) return null;
   return (
-    <span
-      className="inline-flex h-[18px] shrink-0 items-center rounded-sm border border-border bg-muted/40 px-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
-      title={`Signal source: ${SOURCE_LABEL[source]}`}
-    >
-      {SOURCE_LABEL[source]}
-    </span>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          tabIndex={0}
+          className="inline-flex h-[18px] shrink-0 cursor-help items-center rounded-sm border border-border bg-muted/40 px-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        >
+          {SOURCE_LABEL[source]}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="left" align="start">
+        <p className="font-medium text-foreground">{SOURCE_LABEL[source]}</p>
+        <p className="mt-1 text-muted-foreground">{SOURCE_HINT[source]}</p>
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -95,6 +126,7 @@ export function VerdictScreen({
   }
 
   return (
+    <TooltipProvider delayDuration={150} skipDelayDuration={400}>
     <section
       className={cn(
         // h-[580px] fits inside Chrome MV3's ~600px popup window ceiling. The
@@ -233,5 +265,6 @@ export function VerdictScreen({
         </p>
       )}
     </section>
+    </TooltipProvider>
   );
 }
