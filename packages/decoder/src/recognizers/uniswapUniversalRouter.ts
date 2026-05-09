@@ -1,10 +1,29 @@
 import { decodeAbiParameters, decodeFunctionData, getAddress, parseAbi, type Hex } from "viem";
 import type { DecodedAction } from "@intent-check/types";
 
-const ROUTERS: Record<number, string> = {
-  1: "0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af",         // ethereum mainnet UR v2
-  8453: "0x6fF5693b99212Da76ad316178A184AB56D299b43",      // base
+// Known Uniswap Universal Router deployments. Used as a positive identification
+// signal; we also accept any contract whose calldata starts with the execute()
+// selector and decodes into the expected shape, since UR is deployed across many
+// chains and Uniswap rolls new versions periodically.
+const KNOWN_ROUTERS: Record<number, string[]> = {
+  1: [
+    "0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af",  // UR v2
+    "0xEf1c6E67703c7BD7107eed8303Fbe6EC2554BF6B",  // UR v1
+  ],
+  10:    [
+    "0xCb1355ff08Ab38bBCE60111F1bb2B784bE25D7e8",
+    "0x8B844f885672f333Bc0042cB669255f93a4C1E6b",  // newer optimism UR
+  ],
+  137:   ["0x643770E279d5D0733F21d6DC03A8efbABf3255B4"],  // polygon
+  8453:  ["0x6fF5693b99212Da76ad316178A184AB56D299b43"],  // base
+  42161: ["0x5E325eDA8064b456f4781070C0738d849c824258"],  // arbitrum
+  56:    ["0x4Dae2f939ACf50408e13d58534Ff8c2776d45265"],  // bnb
 };
+
+function isKnownRouter(chainId: number, to: string): boolean {
+  const list = KNOWN_ROUTERS[chainId] ?? [];
+  return list.some((a) => a.toLowerCase() === to.toLowerCase());
+}
 
 const UR_ABI = parseAbi([
   "function execute(bytes commands, bytes[] inputs, uint256 deadline)",
@@ -33,10 +52,13 @@ function firstAndLastTokenInV3Path(path: Hex): { first: string; last: string } {
 }
 
 export function tryDecodeUniversalRouter(input: { chainId: number; to: string; data: string }): DecodedAction | null {
-  const expected = ROUTERS[input.chainId];
-  if (!expected || expected.toLowerCase() !== input.to.toLowerCase()) return null;
   if (!input.data || input.data.length < 10) return null;
   if (input.data.slice(0, 10).toLowerCase() !== "0x3593564c") return null; // execute selector
+
+  // Selector match is enough to attempt decode; if args don't fit the UR shape
+  // the try/catch below sends us back to the next recognizer / unknown fallback.
+  const known = isKnownRouter(input.chainId, input.to);
+  void known; // currently unused; downstream may want to surface a "trusted router" signal.
 
   try {
     const { args } = decodeFunctionData({ abi: UR_ABI, data: input.data as Hex });
