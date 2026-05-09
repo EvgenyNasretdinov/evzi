@@ -54,6 +54,7 @@ const EYE_STATUSES: EvziEyeStatus[] = ["blue", "yellow", "red", "green"];
 
 export function PreviewApp() {
   const [scenario, setScenario] = useState<PreviewScenario>(() => readScenarioFromLocation() ?? "idle");
+  const bare = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("bare") === "1";
   const [layoutOnly, setLayoutOnly] = useState(false);
   const [eyeStatus, setEyeStatus] = useState<EvziEyeStatus>("blue");
   const [chatPreviewTrigger, setChatPreviewTrigger] = useState(0);
@@ -67,6 +68,7 @@ export function PreviewApp() {
   return (
     <div className="min-h-screen bg-muted/50">
       <div className="mx-auto max-w-2xl space-y-6 p-6">
+        {!bare && (
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-lg">UI preview</CardTitle>
@@ -127,6 +129,7 @@ export function PreviewApp() {
             </div>
           </CardContent>
         </Card>
+        )}
         <div className="flex justify-center">
           {layoutOnly ? (
             <ConfirmIntentScreen

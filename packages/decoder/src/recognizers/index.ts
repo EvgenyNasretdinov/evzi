@@ -8,3 +8,8 @@ export type Recognizer = (ctx: DecodeContext) => DecodedAction | null | Promise<
 
 // Order: most-specific protocol-shape recognizers first; ERC-20 fallback last.
 export const recognizers: Recognizer[] = [tryDecodeUniversalRouter, tryDecodeAaveV3, tryDecodeErc20];
+
+// Generic ABI fallback. Not part of the regular pipeline (it takes an extra
+// ABI argument); callers invoke it directly when decode() returns "unknown"
+// and a Sourcify-provided ABI is available.
+export { tryDecodeWithAbi, type GenericAbiContext } from "./genericAbi";

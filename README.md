@@ -81,6 +81,10 @@ and surfaces the outcome in the popup so the user sees what happened.
 | **Decoder** | Recognizes ERC-20, Uniswap UR, Aave v3, Permit, Permit2 (single & batch), Seaport. Unknown calldata is flagged. | Hidden approvals, mislabeled actions, signature drainers. |
 | **Protocol registry** | Hand-curated cross-chain whitelist of canonical Uniswap, Aave, Permit2, Seaport, ENS, WETH, stablecoin addresses. | Spoof contracts that look like real ones; trust signals that don't depend on Sourcify. |
 | **Sourcify** | Queries the verified-source database for the target. | Fresh, unverified, or partial-match contracts. |
+| **Proxy resolution** | Sourcify v2 detects EIP-1967, EIP-1822 UUPS, EIP-1167 minimal, Gnosis Safe, Diamond, etc., and resolves the implementation address. We treat the implementation's verification — not the proxy's — as trust. | Verified-proxy-with-malicious-impl backdoors. |
+| **Deployment age** | Chain head (RPC) + Sourcify's `deployment.blockNumber` → contract age in days. | Brand-new rugpull contracts (< 24h flagged DANGER, < 7d flagged CAUTION). |
+| **Author NatSpec** | Surfaces contract-author `userdoc.notice` strings (contract-level and per-function) into the verdict checklist. | Functions whose own NatSpec says *"this transfers ownership permanently"* while the dApp UI says *"claim airdrop"*. |
+| **Generic ABI decoding** | When our specific recognizers miss but Sourcify has the ABI, we ABI-decode any verified function. | Going from "unknown call" → `swapExactTokensForTokens(…)` on Curve / GMX / Balancer for free, no per-protocol code needed. |
 | **Simulation** | Tenderly runs the tx against a live fork; we extract per-asset signed deltas for the user's wallet. | Outcomes the user wouldn't expect — assets leaving the wallet, wrapping/unwrapping flows, reverts. |
 | **Recipient resolution** | Resolves Uniswap UR sentinel addresses (`0x…0001` = msg.sender, `0x…0002` = router-self). | False positives that flag normal Uniswap routing as "third-party drain". |
 | **Origin trust** | Bundled list of 15+ canonical dApp domains; Levenshtein distance check; punycode detection. | Lookalike sites (`unisvvap.org`), IDN-homograph attacks, page-title-impersonation. |
@@ -103,6 +107,15 @@ and surfaces the outcome in the popup so the user sees what happened.
   verifies. The registry trumps Sourcify; the verdict explains why.
 - **Multi-asset wrap-swap-unwrap on Uniswap** — looks "complex" to a
   naïve LLM but is the most common Uniswap flow. The agent knows.
+- **Verified proxy → fresh unverified implementation** — the upgrade-
+  attack shape. The proxy's source is on Sourcify, looks legitimate, but
+  it `delegatecall`s into a contract deployed an hour ago whose source
+  nobody can read. Evzi recurses one hop, sees the impl is unverified
+  (and brand-new), and escalates accordingly.
+- **Author NatSpec contradicts the UI** — a function whose own
+  `userdoc.notice` admits *"transfers ownership of the vault to the
+  caller"* fired from a button labelled *"Claim rewards"*. Both strings
+  end up in the checklist; the LLM judge calls out the divergence.
 
 ## Talk to Evzi (chat)
 

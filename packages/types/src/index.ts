@@ -38,6 +38,25 @@ export type DecodedAction =
   | { kind: "permit2Transfer"; permitted: TokenAmount[]; spender: string; deadline: string }
   | { kind: "seaportOrder"; offerer: string; offer: TokenAmount[]; consideration: TokenAmount[] }
   | { kind: "lendingAction"; protocol: string; verb: "supply" | "withdraw" | "borrow" | "repay"; asset: string; amount: string; onBehalfOf?: string; pool: string; trusted?: boolean }
+  | {
+      kind: "generic";
+      /** Function name as it appears in the ABI, e.g. "swapExactTokensForTokens". */
+      functionName: string;
+      /** Canonical signature, e.g. "swapExactTokensForTokens(uint256,uint256,address[],address,uint256)".
+       * Used to look up userdoc.methods[<signature>].notice. */
+      signature: string;
+      /** Contract address being called. */
+      target: string;
+      /** Stringified arguments in declaration order. BigInts → string, addresses lowercased,
+       * arrays → bracketed comma-separated, structs → JSON. */
+      args: string[];
+      /** Parameter names from the ABI, declaration order. May contain "" if a name was missing. */
+      argNames?: string[];
+      /** Protocol from the registry, when target hits the registry. */
+      protocol?: string;
+      /** True iff target is in the protocol-registry — same semantic as the swap/lendingAction trusted flags. */
+      trusted: boolean;
+    }
   | { kind: "unknown"; selector: string; functionName?: string; rawArgs?: unknown[] };
 
 // Tenderly simulation result, normalized.
@@ -69,22 +88,43 @@ export interface SimLog {
   decoded?: { name: string; args: Record<string, unknown> };
 }
 
+// Set when (chainId, address) hits the bundled protocol registry. This is a
+// deterministic trust signal that's independent of whether Sourcify has the
+// contract verified or whether the calldata decoded as a recognized shape.
+// Defined here (rather than imported from @intent-check/protocol-registry) so
+// the types package stays dependency-free.
+export interface ProtocolInfo {
+  protocol: string;
+  name: string;
+  kind: string;
+}
+
 // Contract trust signals.
 export interface ContractMeta {
   address: string;
   chainId: number;
   verified: boolean;
-  sourceProvider?: "sourcify" | "etherscan";
-  matchType?: "perfect" | "partial";
-  contractName?: string;
   isProxy: boolean;
-  implementation?: string;
-  deploymentBlock?: number;
-  ageHours?: number;
-  // Set when (chainId, address) hits the bundled protocol registry. This is a
-  // deterministic trust signal that's independent of whether Sourcify has the
-  // contract verified or whether the calldata decoded as a recognized shape.
-  knownProtocol?: { protocol: string; name: string; kind: string };
+  matchType?: "exact_match" | "match" | "perfect" | "partial";
+  contractName?: string;
+  knownProtocol?: ProtocolInfo;
+
+  // M4 additions
+  proxyType?: string;
+  /** Populated when isProxy && Sourcify resolved the implementation. */
+  implementation?: ContractMeta;
+  deployment?: {
+    blockNumber?: number;
+    deployer?: string;
+    transactionHash?: string;
+    /** Populated by background using a head-block lookup — added in T5. T3 leaves this undefined. */
+    ageDays?: number;
+  };
+  /** NatSpec userdoc — populated in T6, leave undefined here. */
+  authorIntent?: {
+    contract?: string;
+    method?: string;
+  };
 }
 
 // Origin / page signals.
@@ -163,4 +203,14 @@ export const TIER_ORDER: Record<VerdictTier, number> = {
 
 export function maxTier(a: VerdictTier, b: VerdictTier): VerdictTier {
   return TIER_ORDER[a] >= TIER_ORDER[b] ? a : b;
+}
+
+// Sourcify v2 emits "exact_match" / "match"; v1 emitted "perfect" / "partial".
+// Accept both so callers don't have to care which client populated ContractMeta.
+export function isExactMatch(m: ContractMeta["matchType"]): boolean {
+  return m === "exact_match" || m === "perfect";
+}
+
+export function isPartialMatch(m: ContractMeta["matchType"]): boolean {
+  return m === "match" || m === "partial";
 }

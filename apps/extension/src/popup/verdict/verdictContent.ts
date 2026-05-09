@@ -1,6 +1,7 @@
 import type { EvziEyeStatus } from "@/popup/components/EvziEyeLogo";
 import { formatTokenAmount } from "@intent-check/token-metadata";
 import type { JudgeInput, JudgeVerdict, VerdictTier } from "@intent-check/types";
+import { isExactMatch, isPartialMatch } from "@intent-check/types";
 
 /** Legacy export kept for any importers; the new path drops fallbacks entirely. */
 export const CHECKLIST_SUBTITLE_FALLBACK = "";
@@ -101,6 +102,25 @@ function checklistFromJudgeInput(input: JudgeInput): VerdictChecklistRow[] {
       title: `Decoded as ${d.protocol} ${d.verb}`,
       description: `${d.verb} ${d.amount} of ${shortAddr(d.asset)} on the ${d.protocol} pool${d.onBehalfOf ? ` (on behalf of ${shortAddr(d.onBehalfOf)})` : ""}.`,
     });
+  } else if (d.kind === "generic") {
+    // ABI-decoded fallback. Format args as name=value when names are present;
+    // fall back to bare positional values otherwise. Truncate per-arg so a
+    // 256-byte calldata blob doesn't blow up the checklist row.
+    const truncate = (s: string) => (s.length > 48 ? `${s.slice(0, 45)}…` : s);
+    const argPairs = d.args.map((val, i) => {
+      const name = d.argNames?.[i];
+      const v = truncate(val);
+      return name ? `${name}=${v}` : v;
+    });
+    const headerArgs = (d.argNames && d.argNames.some(Boolean)) ? d.argNames.join(", ") : d.args.map((_, i) => `arg${i}`).join(", ");
+    const titleProtocol = d.protocol ? `${d.protocol} · ` : "";
+    rows.push({
+      severity: d.trusted ? "pass" : "caution",
+      title: `${titleProtocol}Calling ${d.functionName}(${headerArgs}) on ${shortAddr(d.target)}`,
+      description: argPairs.length > 0
+        ? `Arguments: ${argPairs.join(", ")}.`
+        : `No arguments. Decoded from the contract's ABI (Sourcify-provided).`,
+    });
   } else {
     rows.push({
       severity: "caution",
@@ -109,15 +129,33 @@ function checklistFromJudgeInput(input: JudgeInput): VerdictChecklistRow[] {
     });
   }
 
+  // 1b. Author intent (NatSpec userdoc) — what the contract author says.
+  // Surfaced before contract trust so the user reads the human-language
+  // description first, then sees how trusted the source of that description is.
+  if (c.authorIntent?.contract) {
+    rows.push({
+      severity: "pass",
+      title: "What the contract author says it does",
+      description: c.authorIntent.contract,
+    });
+  }
+  if (c.authorIntent?.method) {
+    rows.push({
+      severity: "pass",
+      title: "What this specific function says about itself",
+      description: c.authorIntent.method,
+    });
+  }
+
   // 2. Contract trust — registry first (authoritative), then Sourcify.
   if (c.knownProtocol) {
-    if (c.verified && c.matchType === "perfect") {
+    if (c.verified && isExactMatch(c.matchType)) {
       rows.push({
         severity: "pass",
         title: `Trusted ${c.knownProtocol.protocol} contract`,
         description: `Address matches our registry of canonical ${c.knownProtocol.protocol} deployments and Sourcify verifies the source code (perfect match).`,
       });
-    } else if (c.verified && c.matchType === "partial") {
+    } else if (c.verified && isPartialMatch(c.matchType)) {
       rows.push({
         severity: "pass",
         title: `Trusted ${c.knownProtocol.protocol} contract`,
@@ -130,13 +168,13 @@ function checklistFromJudgeInput(input: JudgeInput): VerdictChecklistRow[] {
         description: `This address matches our hand-curated registry of canonical ${c.knownProtocol.protocol} deployments. Sourcify doesn't list it as verified — that's common for ${c.knownProtocol.protocol} contracts on this chain — but the registry match is enough to trust the address.`,
       });
     }
-  } else if (c.verified && c.matchType === "perfect") {
+  } else if (c.verified && isExactMatch(c.matchType)) {
     rows.push({
       severity: "pass",
       title: "Sourcify: perfect match",
       description: `Sourcify confirms the deployed bytecode matches verified source${c.contractName ? ` (${c.contractName})` : ""}.`,
     });
-  } else if (c.verified && c.matchType === "partial") {
+  } else if (c.verified && isPartialMatch(c.matchType)) {
     rows.push({
       severity: "caution",
       title: "Sourcify: partial match",

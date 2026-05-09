@@ -1,9 +1,9 @@
 # Evzi — Architecture
 
-Last updated for the state at `main` after M3e — Talk-to-Evzi chat overlay
-wired to a `/chat` endpoint on the judge backend, plus the designer's branded
-idle screen + animated wordmark + chat UI from
-`feature/extension-shadcn-ui-preview`.
+Last updated for the state at `main` after M4 — Sourcify v2 integration:
+proxy resolution + one-hop recursion, deployment-age findings, NatSpec
+userdoc surfaced into the verdict checklist, and a generic ABI-decoder
+fallback for any verified contract.
 
 This document is the entry point for engineers and AI agents joining the
 project. It explains:
@@ -372,6 +372,110 @@ Production will move both behind a proper key.
 
 ---
 
+## Sourcify v2 integration (M4)
+
+`packages/sourcify-client` calls Sourcify's v2 API and pulls four fields off
+the response, all keyed off `(chainId, address)`:
+
+- **`proxyResolution`** — `{ isProxy, proxyType, implementations[] }`. EIP-1967,
+  EIP-1822 UUPS, EIP-1167 minimal, Gnosis Safe, Diamond, etc.
+- **`deployment`** — `{ blockNumber, transactionHash, deployer }`. Block number
+  is the load-bearing field; we don't need real timestamps (see below).
+- **`signatures`** — function + event selector → canonical signature map.
+  We **don't** consume this yet; we keep it on the response for future
+  log-decoding work (decoding `Transfer`/`Approval` events out of simulation
+  traces).
+- **`userdoc`** — NatSpec `@notice` strings: contract-level `notice` plus a
+  `methods[<canonical-sig>].notice` map.
+
+### Proxy recursion (one hop)
+
+When v2 reports `isProxy && implementations[0]`, `fetchVerifiedContract`
+recurses once into the implementation address and treats **the
+implementation's** verification status as the load-bearing trust signal.
+This is the M4 killer case: a verified ERC-1967 proxy whose implementation
+is a brand-new unverified contract is an upgrade-attack shape that v1
+Sourcify could not see.
+
+The recursion is structurally one-hop — a private internal function takes a
+`recurse: boolean` flag, and the proxy branch always calls it with
+`recurse: false`. Proxies-of-proxies are rare in practice and the cap also
+guards against pathological cycles without a visited-set.
+
+When the implementation is unverified or unknown, we still return the
+proxy's metadata to the caller but emit `PROXY_IMPL_UNVERIFIED` /
+`PROXY_IMPL_UNKNOWN` so the safety floor escalates the verdict.
+
+### Deployment age (`apps/extension/src/lib/blockTime.ts`)
+
+We compute `ageInDays` as `(headBlock - deployment.blockNumber) / BLOCKS_PER_DAY[chainId]`.
+
+- `getChainHead(chainId)` calls a free public RPC (`eth_blockNumber`) per
+  chain. Results are cached in-memory for **60 seconds** — chain head moves
+  monotonically and a minute of staleness is irrelevant for a "is this
+  contract more or less than 7 days old" decision.
+- `BLOCKS_PER_DAY` is a per-chain constant table (Ethereum 7200,
+  Optimism 43200, Base 43200, Arbitrum 350000) — covering all chains in
+  `SUPPORTED_CHAIN_IDS`. Off by ~10-20% is fine since we only use it for
+  age-threshold buckets.
+
+We deliberately **don't** fetch the deployment block's real `timestamp`:
+it would double the RPC calls and we have no shared, authenticated RPC
+config yet. Block-count math is a few percent off in absolute days but
+keeps the "<24h" / "<7d" thresholds honest.
+
+### Generic ABI decoder fallback
+
+`packages/decoder/src/recognizers/genericAbi.ts`. Runs **only** when:
+
+1. None of the specific recognizers (ERC-20, Uniswap UR, Aave v3, …)
+   matched, **and**
+2. Sourcify returned an ABI for the target.
+
+It ABI-decodes the calldata against the verified ABI and emits
+`DecodedAction.kind = "generic"` with `functionName`, the canonical
+`signature` (e.g. `swapExactTokensForTokens(uint256,uint256,address[],address,uint256)`),
+positional `args`, parallel `argNames`, plus `protocol` (from the registry
+if known) and `trusted` (registry hit + verified). This is how we go from
+"unknown call" to a readable function name on Curve / GMX / Balancer with
+no per-protocol code.
+
+### NatSpec userdoc surfacing
+
+Sourcify's `userdoc.notice` is the contract author's plain-English claim
+about what the contract does. We populate `ContractMeta.authorIntent` with
+the contract-level `notice` and copy `methods[<sig>].notice` onto the
+decoded action when the call decoded as `generic` (we need the canonical
+signature key to look it up — none of the specific recognizers carry that
+key today).
+
+Both surfaces appear in the verdict checklist as separate rows:
+
+- "What the contract author says it does" (contract-level)
+- "What this specific function says about itself" (per-method)
+
+The intent of these rows is to expose mismatches like a function whose
+NatSpec says *"transfers ownership permanently"* fired from a UI labelled
+*"claim airdrop"* — the LLM judge sees both strings and can call out the
+divergence.
+
+### M4 finding codes
+
+| Code | Severity | Trigger |
+|---|---|---|
+| `PROXY_IMPL_UNVERIFIED` | warn | Proxy is verified but implementation source is not |
+| `PROXY_IMPL_UNKNOWN` | warn | Proxy is verified, implementation address didn't resolve |
+| `RECENT_DEPLOYMENT` | warn | Contract age < 7 days |
+| `BRAND_NEW_CONTRACT` | danger | Contract age < 24 hours |
+
+`warn` codes get escalated to CAUTION by the existing safety floor;
+`danger` to DANGER. **All four are suppressed when the contract is in the
+protocol registry** — canonical Uniswap / Aave / Permit2 deployments are
+trusted by address regardless of how recently they shipped or whether
+their proxy's implementation is verified on Sourcify.
+
+---
+
 ## The protocol registry: where, why, how to grow it
 
 ### What it is
@@ -450,6 +554,7 @@ optionally a recognizer-trusted test if a new recognizer relies on it.
 | `packages/decoder/src/recognizers/uniswapUniversalRouter.ts` | UR command id → name map; sentinel addresses (`0x...0001`, `0x...0002`); execute() selectors | Protocol semantics, not configurable. | No. |
 | `packages/decoder/src/recognizers/aaveV3.ts` | Pool function selectors | Protocol semantics. | No. |
 | `packages/token-metadata/src/index.ts` | Native sentinels per chain | Chain semantics. | No. |
+| `apps/extension/src/lib/blockTime.ts` | `BLOCKS_PER_DAY` per chain + `FREE_RPC` URLs | Per-chain physics + a public RPC for `eth_blockNumber`. | Yes — move RPC calls behind the judge backend so we can use a shared, authenticated provider and stop depending on free public endpoints. |
 | `apps/extension/src/shared/config.ts` | `JUDGE_BASE_URL = "http://127.0.0.1:8787"` | Local dev default. | Yes — replace with `import.meta.env.VITE_JUDGE_URL` once we deploy. |
 | `apps/extension/src/shared/config.ts` | `JUDGE_API_KEY = "local-dev-key"` | Matches wrangler default. | Yes — should come from `.env`. |
 | `apps/judge/src/openai.ts` | Default model `gpt-5.4` | Overridable via `OPENAI_MODEL`. | No. |
@@ -494,6 +599,10 @@ for local dev, replace with backend proxy before any production build.
    (so it doesn't double-list).
 3. Add a test in `apps/judge/tests/judge.golden.test.ts` if it should
    drive a verdict tier change.
+4. If the finding should be suppressed for known-protocol addresses,
+   gate it on `contract.knownProtocol` the same way `UNVERIFIED_CONTRACT`
+   and the four M4 codes (`PROXY_IMPL_UNVERIFIED`, `PROXY_IMPL_UNKNOWN`,
+   `RECENT_DEPLOYMENT`, `BRAND_NEW_CONTRACT`) are.
 
 ### Adding a new chain
 1. Add the chain id to `SUPPORTED_CHAIN_IDS` in `apps/extension/src/shared/config.ts`.
@@ -530,6 +639,15 @@ for local dev, replace with backend proxy before any production build.
 - Hand-curated registry of canonical protocol addresses across 6 chains.
 - Origin lookalike defense (Levenshtein + punycode).
 - Sourcify + Tenderly integrations with timeouts.
+- **Sourcify v2** with one-hop proxy recursion (proxy implementation is
+  the load-bearing trust signal, not the proxy itself).
+- **Generic ABI decoder** for any Sourcify-verified function — turns
+  "unknown call" into a readable function name + named args without
+  per-protocol code.
+- **Deployment-age findings** (`RECENT_DEPLOYMENT`, `BRAND_NEW_CONTRACT`)
+  via free-RPC chain-head lookup + per-chain `BLOCKS_PER_DAY`.
+- **Author NatSpec** (`userdoc.notice`) surfaced into the verdict
+  checklist at contract level and per-method level.
 - Designer's UI: ConfirmIntentScreen, VerdictScreen, EvziEyeLogo.
 - Pipeline progress visible in popup (5 steps with per-step outcome tones).
 - Judge backend with OpenAI (`gpt-5.4`) + Anthropic dispatch and

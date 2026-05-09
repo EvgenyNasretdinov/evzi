@@ -1,9 +1,11 @@
-import { decode, decodeTypedData, parseTypedData, isUnlimitedAmount } from "@intent-check/decoder";
+import { decode, decodeTypedData, parseTypedData, isUnlimitedAmount, tryDecodeWithAbi } from "@intent-check/decoder";
 import { classifyOrigin } from "@intent-check/origin-trust";
 import { lookupProtocol } from "@intent-check/protocol-registry";
-import { fetchVerifiedContract } from "@intent-check/sourcify-client";
+import { fetchVerifiedContractV2 } from "@intent-check/sourcify-client";
 import { simulate } from "@intent-check/tenderly-client";
-import type { JudgeInput, JudgeVerdict, WalletRequest, ContractMeta, OriginSignals, UserIntent, Finding, SimResult, NetDelta } from "@intent-check/types";
+import type { JudgeInput, JudgeVerdict, WalletRequest, ContractMeta, OriginSignals, UserIntent, Finding, SimResult, NetDelta, DecodedAction } from "@intent-check/types";
+import { isExactMatch, isPartialMatch } from "@intent-check/types";
+import { estimateAgeDays, getChainHead, FREE_RPC } from "./lib/blockTime";
 import type { ContentToBackground, BackgroundToContent, PageSnapshot, PopupToBackground, ChatSendResponse } from "./shared/messaging";
 import {
   JUDGE_URL, JUDGE_API_KEY, INFER_INTENT_URL, CHAT_URL,
@@ -49,6 +51,31 @@ function makeSteps(overrides: Partial<Record<JudgingStep["id"], Partial<JudgingS
     tone: overrides[p.id]?.tone,
     detail: overrides[p.id]?.detail,
   }));
+}
+
+/** Pick the userdoc.notice for the function being called, when we know it.
+ * The key in userdoc.methods is the canonical function signature, e.g.
+ * "transfer(address,uint256)". For decoded.kind === "generic" we have the
+ * canonical signature in decoded.signature — that lets us pull the per-method
+ * NatSpec notice the contract author wrote. For other decoded kinds we don't
+ * have a stable signature handy, so method stays undefined.
+ *
+ * Return the contract-level notice separately so the caller always gets it
+ * regardless of decoded.kind.
+ */
+function pickAuthorIntent(
+  userdoc: { notice?: string; methods?: Record<string, { notice?: string }> } | undefined,
+  decoded: DecodedAction
+): { contract?: string; method?: string } {
+  if (!userdoc) return {};
+  const rawContract = userdoc.notice;
+  const contract = typeof rawContract === "string" && rawContract.trim() ? rawContract : undefined;
+  let method: string | undefined;
+  if (decoded.kind === "generic" && userdoc.methods) {
+    const notice = userdoc.methods[decoded.signature]?.notice;
+    if (typeof notice === "string" && notice.trim()) method = notice;
+  }
+  return { contract, method };
 }
 
 type PhaseState =
@@ -220,13 +247,43 @@ function deterministicFindings(input: {
   }
   // Suppress "unverified" warning when:
   //   (a) we recognize the address from the bundled protocol registry, OR
-  //   (b) the decoder confidently identified the target as a known router shape.
+  //   (b) the decoder confidently identified the target as a known router shape, OR
+  //   (c) the contract is a proxy — the trust signal there is whether the
+  //       *implementation* is verified, surfaced separately as PROXY_IMPL_*.
   // Sourcify coverage is uneven across chains/contracts; relying on it alone
   // would flag well-known Uniswap routers as suspicious.
   const trustedByRegistry = input.contract.knownProtocol !== undefined;
   const trustedByDecoder = input.decoded.kind === "swap" && input.decoded.trusted === true;
-  if (!input.contract.verified && !trustedByRegistry && !trustedByDecoder) {
+  if (!input.contract.verified && !trustedByRegistry && !trustedByDecoder && !input.contract.isProxy) {
     out.push({ code: "UNVERIFIED_CONTRACT", severity: "warn", text: "Target contract is not verified on Sourcify." });
+  }
+
+  // Proxy-specific trust signals. The proxy bytecode itself is usually a
+  // tiny, verified EIP-1967 stub — the load-bearing question is what the
+  // implementation address is and whether *it* is verified.
+  //
+  // Suppress entirely when the proxy address itself is in the bundled
+  // protocol registry: canonical contracts like Aave Pool and USDC ARE
+  // proxies, and a Sourcify proxyResolutionError or an impl missing from
+  // Sourcify would otherwise false-flag a CAUTION on a known-trusted address.
+  if (input.contract.isProxy && !input.contract.knownProtocol) {
+    if (!input.contract.implementation) {
+      // Sourcify said it's a proxy but proxyResolutionError prevented us from
+      // identifying the implementation — we can't see what code will run.
+      out.push({
+        code: "PROXY_IMPL_UNKNOWN",
+        severity: "warn",
+        text: `${input.contract.proxyType ?? "Proxy"} contract — could not resolve the implementation behind it`,
+      });
+    } else if (!input.contract.implementation.verified && !input.contract.implementation.knownProtocol) {
+      // Implementation resolved but not verified, and it's not in the bundled
+      // registry of known logic contracts. Treat as a soft warning.
+      out.push({
+        code: "PROXY_IMPL_UNVERIFIED",
+        severity: "warn",
+        text: `${input.contract.proxyType ?? "Proxy"} delegates calls to ${input.contract.implementation.address}, which is not verified on Sourcify`,
+      });
+    }
   }
   if (input.intent.kind === "mint" && input.decoded.kind === "approve") {
     out.push({ code: "INTENT_MISMATCH_MINT_VS_APPROVE", severity: "danger", text: "Page looks like a mint but tx is an approval." });
@@ -244,6 +301,30 @@ function deterministicFindings(input: {
     const isRouterAddr = recipient !== "" && recipient === routerAddr;
     if (recipient !== "" && !isProtocolSentinel && !isRouterAddr && recipient !== sender) {
       out.push({ code: "SWAP_RECIPIENT_MISMATCH", severity: "warn", text: `Swap proceeds go to ${input.decoded.recipient}, not your wallet.` });
+    }
+  }
+
+  // ---- Fresh-deployment findings (T5) ----
+  //
+  // Sourcify v2 gives us the deploy block; the background enriches contract.deployment
+  // with an `ageDays` estimate (head - deploy / blocks-per-day). A fresh contract is
+  // a textbook rugpull / phishing signal — but we suppress these when the address is
+  // already in our bundled protocol registry (canonical Uniswap, Permit2, etc.) since
+  // "age" is not the right signal for an audited, well-known deployment.
+  const ageDays = input.contract.deployment?.ageDays;
+  if (ageDays !== undefined && !input.contract.knownProtocol) {
+    if (ageDays < 1) {
+      out.push({
+        code: "BRAND_NEW_CONTRACT",
+        severity: "danger",
+        text: `Contract was deployed less than 24 hours ago (block ${input.contract.deployment!.blockNumber}). This is a textbook rugpull / phishing pattern.`,
+      });
+    } else if (ageDays < 7) {
+      out.push({
+        code: "RECENT_DEPLOYMENT",
+        severity: "warn",
+        text: `Contract was deployed about ${Math.floor(ageDays)} day(s) ago — recent enough that the user should slow down and verify.`,
+      });
     }
   }
 
@@ -433,8 +514,27 @@ chrome.runtime.onMessage.addListener((msg: ContentToBackground, sender) => {
       }
 
       // Trust + verification lookups apply to whichever address we resolved.
-      const v = targetAddr ? await fetchVerifiedContract({ chainId, address: targetAddr }) : { verified: false, abi: [] as any[] };
+      const v = targetAddr
+        ? await fetchVerifiedContractV2({ chainId, address: targetAddr })
+        : { verified: false, abi: [] as any[], proxy: undefined, deployment: undefined, implementation: undefined, matchType: undefined, contractName: undefined, userdoc: undefined };
       const known = targetAddr ? lookupProtocol(chainId, targetAddr) : null;
+
+      // T7: generic ABI fallback. When none of the hand-written recognizers
+      // matched but Sourcify gave us an ABI, decode the call generically so
+      // the user sees "calling <fn> on <contract>" instead of "Unknown call".
+      // We do this here (not inside decode()) because decode() doesn't know
+      // about Sourcify; the ABI comes from the v2 fetch above.
+      if (decoded.kind === "unknown" && targetAddr && request.method === "eth_sendTransaction" && Array.isArray(v.abi) && v.abi.length > 0) {
+        const txData = request.params[0].data ?? "0x";
+        const generic = tryDecodeWithAbi({ calldata: txData, to: targetAddr }, v.abi as any);
+        if (generic && generic.kind === "generic") {
+          if (known) {
+            generic.protocol = known.protocol;
+            generic.trusted = true;
+          }
+          decoded = generic;
+        }
+      }
 
       const intent = await inferIntent({
         snapshot: pageSnapshot,
@@ -442,18 +542,57 @@ chrome.runtime.onMessage.addListener((msg: ContentToBackground, sender) => {
         clickContext: clickContext ? { text: clickContext.text, ariaLabel: clickContext.ariaLabel, sectionHeading: clickContext.sectionHeading } : undefined,
         decoded: decoded.kind === "swap"
           ? { kind: "swap", protocol: decoded.protocol, commands: decoded.commands }
-          : { kind: decoded.kind },
+          : decoded.kind === "generic"
+            ? { kind: "generic", protocol: decoded.protocol }
+            : { kind: decoded.kind },
       });
+      const target = targetAddr ?? "0x0000000000000000000000000000000000000000";
+      const implAddress = v.proxy?.implementationAddress;
       const contract: ContractMeta = {
-        address: targetAddr ?? "0x0000000000000000000000000000000000000000",
+        address: target,
         chainId,
         verified: v.verified,
-        sourceProvider: v.verified ? "sourcify" : undefined,
+        isProxy: !!v.proxy?.isProxy,
         matchType: v.matchType,
         contractName: known?.name ?? v.contractName,
-        isProxy: false,
         knownProtocol: known ? { protocol: known.protocol, name: known.name, kind: known.kind } : undefined,
+        proxyType: v.proxy?.proxyType,
+        implementation: v.implementation && implAddress
+          ? {
+              address: implAddress,
+              chainId,
+              verified: v.implementation.verified,
+              isProxy: false, // we capped recursion at 1 hop
+              matchType: v.implementation.matchType,
+              contractName: v.implementation.contractName,
+              knownProtocol: lookupProtocol(chainId, implAddress) ?? undefined,
+            }
+          : undefined,
+        deployment: v.deployment ? { ...v.deployment } : undefined,
       };
+
+      // Best-effort: enrich `deployment.ageDays` using a chain-head lookup. If
+      // the RPC is down, the chain isn't in FREE_RPC, or no deploy block is
+      // known, ageDays simply stays undefined — judging proceeds either way.
+      const rpcUrl = FREE_RPC[chainId];
+      if (contract.deployment?.blockNumber !== undefined && rpcUrl) {
+        const head = await getChainHead(chainId, rpcUrl);
+        if (head !== undefined) {
+          const ageDays = estimateAgeDays({
+            chainId,
+            headBlock: head,
+            deployBlock: contract.deployment.blockNumber,
+          });
+          if (ageDays !== undefined) {
+            contract.deployment.ageDays = ageDays;
+          }
+        }
+      }
+
+      // T6: surface NatSpec userdoc as the contract author's own description.
+      // The contract-level notice always populates when present; per-method
+      // notice is reserved for T7 (DecodedAction.kind === "generic").
+      contract.authorIntent = pickAuthorIntent(v.userdoc, decoded);
 
       const clickCtx = clickContext ? { text: clickContext.text, ariaLabel: clickContext.ariaLabel, sectionHeading: clickContext.sectionHeading } : undefined;
       await setState(msg.id, { phase: "awaiting_confirm", tabId, baseDraft: { request, origin, pageSnapshot, clickContext: clickCtx, chainId, decoded, contract, intent } });
@@ -487,6 +626,9 @@ chrome.runtime.onMessage.addListener((msg: ContentToBackground, sender) => {
       } else if (draft.decoded.kind === "unknown") {
         decodingDetail = `Unknown · selector ${draft.decoded.selector}`;
         decodingTone = "warn";
+      } else if (draft.decoded.kind === "generic") {
+        decodingDetail = `Generic ABI · ${draft.decoded.functionName}()`;
+        decodingTone = draft.decoded.trusted ? "ok" : "warn";
       } else {
         decodingDetail = draft.decoded.kind;
         decodingTone = "ok";
@@ -499,10 +641,10 @@ chrome.runtime.onMessage.addListener((msg: ContentToBackground, sender) => {
 
       let sourcifyDetail: string;
       let sourcifyTone: JudgingStep["tone"];
-      if (draft.contract.verified && draft.contract.matchType === "perfect") {
+      if (draft.contract.verified && isExactMatch(draft.contract.matchType)) {
         sourcifyDetail = "Perfect match";
         sourcifyTone = "ok";
-      } else if (draft.contract.verified && draft.contract.matchType === "partial") {
+      } else if (draft.contract.verified && isPartialMatch(draft.contract.matchType)) {
         sourcifyDetail = "Partial match";
         sourcifyTone = "warn";
       } else {

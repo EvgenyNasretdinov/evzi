@@ -33,6 +33,13 @@ export function amountsFromDecoded(decoded: DecodedAction | undefined): { from: 
         from: { amount: decoded.amount, symbol: decoded.token.slice(0, 8) + "…" },
         to: { amount: decoded.to.slice(0, 8) + "…", symbol: "recipient" },
       };
+    case "generic":
+      // Generic ABI decode: no monetary amount to show in the from/to layout,
+      // but expose the function name so callers can render a one-line preview.
+      return {
+        from: { amount: decoded.functionName, symbol: "function" },
+        to: { amount: decoded.target.slice(0, 8) + "…", symbol: "target" },
+      };
     default:
       return { from: EMPTY, to: EMPTY };
   }

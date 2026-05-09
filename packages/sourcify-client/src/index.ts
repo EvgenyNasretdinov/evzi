@@ -1,3 +1,5 @@
+export * from "./v2";
+
 export interface VerifiedContract {
   verified: boolean;
   contractName?: string;
