@@ -77,19 +77,19 @@ describe("/judge/info", () => {
     expect(body.model).toBeUndefined();
   });
 
-  it("reports openai with default model gpt-5.2", async () => {
+  it("reports openai with default model gpt-5.4", async () => {
     const app = new Hono();
     mountJudge(app, { apiKey: "k", openaiApiKey: "sk-fake" });
     const body = (await (await app.request("/judge/info")).json()) as { provider: string; model?: string };
     expect(body.provider).toBe("openai");
-    expect(body.model).toBe("gpt-5.2");
+    expect(body.model).toBe("gpt-5.4");
   });
 
   it("reports openai with custom model when overridden", async () => {
     const app = new Hono();
-    mountJudge(app, { apiKey: "k", openaiApiKey: "sk-fake", openaiModel: "gpt-5.4" });
+    mountJudge(app, { apiKey: "k", openaiApiKey: "sk-fake", openaiModel: "gpt-5.2" });
     const body = (await (await app.request("/judge/info")).json()) as { provider: string; model?: string };
-    expect(body.model).toBe("gpt-5.4");
+    expect(body.model).toBe("gpt-5.2");
   });
 
   it("reports anthropic when only anthropic key is set", async () => {

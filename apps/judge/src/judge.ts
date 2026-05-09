@@ -1,16 +1,19 @@
 import type { Hono, Context } from "hono";
-import type { JudgeInput, JudgeVerdict } from "@intent-check/types";
+import type { JudgeInput, JudgeVerdict, UserIntent } from "@intent-check/types";
 import { applySafetyFloor } from "./safetyFloor";
 import { llmJudge } from "./anthropic";
 import { llmJudgeOpenAI } from "./openai";
+import { inferIntentLLM, type InferIntentInput } from "./inferIntent";
 
 export interface JudgeOptions {
   stubVerdict?: boolean;
   anthropicApiKey?: string;
   openaiApiKey?: string;
   openaiModel?: string;
+  openaiInferModel?: string;  // small/cheap model for /infer-intent
   apiKey?: string;
   llmOverride?: (input: JudgeInput) => Promise<JudgeVerdict>; // for tests
+  inferIntentOverride?: (input: InferIntentInput) => Promise<UserIntent>; // for tests
 }
 
 export type JudgeOptionsLike = JudgeOptions | ((c: Context<any>) => JudgeOptions);
@@ -27,10 +30,35 @@ export function mountJudge(app: Hono<any>, optsLike: JudgeOptionsLike) {
     let provider: "stub" | "openai" | "anthropic" | "none";
     let model: string | undefined;
     if (opts.stubVerdict) { provider = "stub"; model = undefined; }
-    else if (opts.openaiApiKey) { provider = "openai"; model = opts.openaiModel ?? "gpt-5.2"; }
+    else if (opts.openaiApiKey) { provider = "openai"; model = opts.openaiModel ?? "gpt-5.4"; }
     else if (opts.anthropicApiKey) { provider = "anthropic"; model = "claude-sonnet-4-6"; }
     else { provider = "none"; model = undefined; }
     return c.json({ provider, model });
+  });
+
+  app.post("/infer-intent", async (c) => {
+    const opts = resolveOpts(c, optsLike);
+    const apiKey = opts.apiKey;
+    if (!apiKey) return c.json({ error: "judge_api_key_unconfigured" }, 500);
+    if (c.req.header("x-api-key") !== apiKey) return c.json({ error: "unauthorized" }, 401);
+
+    let input: InferIntentInput;
+    try { input = (await c.req.json()) as InferIntentInput; }
+    catch { return c.json({ error: "invalid_json" }, 400); }
+
+    if (opts.inferIntentOverride) {
+      try { return c.json(await opts.inferIntentOverride(input)); }
+      catch (e) { return c.json({ error: "infer_failed", message: String((e as Error).message ?? e) }, 502); }
+    }
+    if (!opts.openaiApiKey) {
+      return c.json({ error: "infer_unavailable", message: "/infer-intent requires OPENAI_API_KEY" }, 501);
+    }
+    try {
+      const intent = await inferIntentLLM(input, opts.openaiApiKey, opts.openaiInferModel);
+      return c.json(intent);
+    } catch (e) {
+      return c.json({ error: "infer_failed", message: String((e as Error).message ?? e) }, 502);
+    }
   });
 
   app.post("/judge", async (c) => {

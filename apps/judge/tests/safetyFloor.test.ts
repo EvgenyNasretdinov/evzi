@@ -54,7 +54,7 @@ describe("safety floor — trust ceiling", () => {
     const danger: JudgeVerdict = { ...llm, tier: "DANGER", headline: "looks scary" };
     const r = applySafetyFloor(danger, trustedSwapInput());
     expect(r.tier).toBe("CAUTION");
-    expect(r.reasons[0].text.toLowerCase()).toContain("deterministic checks all passed");
+    expect(r.reasons[0]?.text.toLowerCase()).toContain("deterministic checks all passed");
   });
 
   it("does NOT clamp when sim is missing", () => {
@@ -90,7 +90,7 @@ describe("safety floor — trust ceiling", () => {
     const r = applySafetyFloor(caution, trustedSwapInput());
     expect(r.tier).toBe("CAUTION");
     expect(r.reasons.length).toBe(1);
-    expect(r.reasons[0].text).toBe("slight thing");
+    expect(r.reasons[0]?.text).toBe("slight thing");
   });
 
   // M2.7 — registry-based trust ceiling (works even when decoded.kind === "unknown")

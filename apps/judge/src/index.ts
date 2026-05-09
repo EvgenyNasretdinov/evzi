@@ -6,6 +6,7 @@ export interface Env {
   ANTHROPIC_API_KEY?: string;
   OPENAI_API_KEY?: string;
   OPENAI_MODEL?: string;
+  OPENAI_INFER_MODEL?: string;  // override for /infer-intent (default gpt-5-mini)
   JUDGE_API_KEY: string;
   STUB_VERDICT?: string;
 }
@@ -21,6 +22,7 @@ mountJudge(app, (c) => ({
   anthropicApiKey: c.env.ANTHROPIC_API_KEY,
   openaiApiKey: c.env.OPENAI_API_KEY,
   openaiModel: c.env.OPENAI_MODEL,
+  openaiInferModel: c.env.OPENAI_INFER_MODEL,
   apiKey: c.env.JUDGE_API_KEY,
 }));
 
