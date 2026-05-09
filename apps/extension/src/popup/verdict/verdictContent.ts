@@ -195,7 +195,36 @@ function checklistFromJudgeInput(input: JudgeInput): VerdictChecklistRow[] {
     }
   }
 
-  // 5. Deterministic findings — append any with non-info severity that aren't
+  // 5. Origin trust — known dApp / lookalike / unknown.
+  const o = input.origin;
+  if (o.knownDappMatch?.matched) {
+    rows.push({
+      severity: "pass",
+      title: `Origin: ${o.knownDappMatch.name} (verified)`,
+      description: `Page is served from a domain we recognise as ${o.knownDappMatch.name}. The expected domains are ${o.knownDappMatch.expectedDomains.join(", ")}.`,
+    });
+  } else if (o.punycode) {
+    rows.push({
+      severity: "fail",
+      title: "Origin: punycode-encoded hostname",
+      description: `The page hostname uses xn-- punycode labels — a classic lookalike-domain phishing pattern. Wallets often display the visually-similar Unicode form.`,
+    });
+  } else if (o.lookalikeOf) {
+    rows.push({
+      severity: "fail",
+      title: `Origin: lookalike of ${o.lookalikeOf}`,
+      description: `The page hostname is very close to a known ${o.lookalikeOf} domain but isn't it. Likely phishing.`,
+    });
+  } else if (o.origin) {
+    // Unknown origin — informational, not bad. Only show when we have something.
+    rows.push({
+      severity: "caution",
+      title: `Origin: ${o.origin}`,
+      description: `We don't recognise this dApp. That doesn't mean it's malicious — but check the URL carefully and look for other red flags above.`,
+    });
+  }
+
+  // 6. Deterministic findings — append any with non-info severity that aren't
   // already covered above. (info-level findings are usually informational
   // duplicates of the rows we already added.)
   for (const f of input.findings) {

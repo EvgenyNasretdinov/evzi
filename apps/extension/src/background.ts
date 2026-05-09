@@ -1,4 +1,5 @@
 import { decode, decodeTypedData, parseTypedData, isUnlimitedAmount } from "@intent-check/decoder";
+import { classifyOrigin } from "@intent-check/origin-trust";
 import { lookupProtocol } from "@intent-check/protocol-registry";
 import { fetchVerifiedContract } from "@intent-check/sourcify-client";
 import { simulate } from "@intent-check/tenderly-client";
@@ -181,8 +182,36 @@ async function inferIntent(args: {
   }
 }
 
-function deterministicFindings(input: { decoded: JudgeInput["decoded"]; contract: ContractMeta; intent: UserIntent; from?: string }): Finding[] {
+type OriginVerdictArg = ReturnType<typeof classifyOrigin>;
+
+function deterministicFindings(input: {
+  decoded: JudgeInput["decoded"];
+  contract: ContractMeta;
+  intent: UserIntent;
+  from?: string;
+  originVerdict?: OriginVerdictArg;
+}): Finding[] {
   const out: Finding[] = [];
+
+  // Origin trust — strongest deterministic signal for phishing.
+  if (input.originVerdict) {
+    if (input.originVerdict.kind === "punycode") {
+      out.push({
+        code: "PUNYCODE_DOMAIN",
+        severity: "danger",
+        text: `Page hostname (${input.originVerdict.hostname}) uses punycode encoding — common in lookalike-domain phishing.`,
+      });
+    } else if (input.originVerdict.kind === "lookalike") {
+      out.push({
+        code: "LOOKALIKE_DOMAIN",
+        severity: "danger",
+        text: `Page domain "${input.originVerdict.suspectDomain}" looks suspiciously similar to ${input.originVerdict.suspectedTarget.name} (${input.originVerdict.suspectedTarget.domains[0]}). Likely phishing.`,
+      });
+    }
+    // "trusted" and "unknown" don't emit a finding here; the verdict checklist
+    // will surface them as informational rows.
+  }
+
   if (input.decoded.kind === "approve" && input.decoded.isUnlimited) {
     out.push({ code: "UNLIMITED_APPROVAL", severity: "danger", text: `Unlimited approval to ${input.decoded.spender}` });
   }
@@ -522,12 +551,28 @@ chrome.runtime.onMessage.addListener((msg: ContentToBackground, sender) => {
         enteredAt: Date.now(),
       });
 
-      const findings = deterministicFindings({ decoded: draft.decoded, contract: draft.contract, intent: msg.intent, from: tx?.from });
+      // Origin trust signals — punycode, lookalike, or known-dApp match. Rolled
+      // into both OriginSignals (for the LLM judge to read) and findings (for
+      // the safety floor to enforce).
+      const originVerdict = classifyOrigin(draft.pageSnapshot.url || draft.origin);
       const originSig: OriginSignals = {
         url: draft.pageSnapshot.url, origin: draft.origin,
         pageTitle: draft.pageSnapshot.title, ogTitle: draft.pageSnapshot.ogTitle, ogSiteName: draft.pageSnapshot.ogSiteName,
         visibleButtonText: draft.pageSnapshot.visibleButtonText,
+        knownDappMatch: originVerdict.kind === "trusted"
+          ? { name: originVerdict.match.name, expectedDomains: originVerdict.match.domains, matched: true }
+          : undefined,
+        punycode: originVerdict.kind === "punycode" ? true : undefined,
+        lookalikeOf: originVerdict.kind === "lookalike" ? originVerdict.suspectedTarget.name : undefined,
       };
+
+      const findings = deterministicFindings({
+        decoded: draft.decoded,
+        contract: draft.contract,
+        intent: msg.intent,
+        from: tx?.from,
+        originVerdict,
+      });
       const netEffect = sim && tx?.from ? computeNetEffect(sim, tx.from) : undefined;
       const judgeInput: JudgeInput = { intent: msg.intent, decoded: draft.decoded, sim, contract: draft.contract, origin: originSig, findings, request: draft.request, netEffect };
       try {
