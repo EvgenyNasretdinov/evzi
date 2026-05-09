@@ -122,7 +122,7 @@ export function ConfirmIntentScreen({
   return (
     <section
       className={cn(
-        "evzi-popup-surface shadow-popup flex max-h-[min(85vh,640px)] w-full max-w-[420px] flex-col overflow-hidden",
+        "evzi-popup-surface shadow-popup flex max-h-[640px] w-full max-w-[420px] flex-col overflow-hidden",
         className
       )}
     >

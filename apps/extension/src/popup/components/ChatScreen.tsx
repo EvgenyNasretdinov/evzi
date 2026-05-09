@@ -100,7 +100,7 @@ export function ChatScreen({ onBack, onClose, initialMessages, sendMessage, clas
   return (
     <section
       className={cn(
-        "evzi-popup-surface shadow-popup flex h-[min(85vh,640px)] max-h-[min(85vh,640px)] w-full max-w-[420px] flex-col overflow-hidden",
+        "evzi-popup-surface shadow-popup flex h-[640px] max-h-[640px] w-full max-w-[420px] flex-col overflow-hidden",
         className
       )}
     >
@@ -117,13 +117,11 @@ export function ChatScreen({ onBack, onClose, initialMessages, sendMessage, clas
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         {empty ? (
-          <div className="flex flex-col px-6 py-4">
-            <div className="flex h-20 items-start pt-2">
-              <AnimatedEye size={EMPTY_STATE_EYE_SIZE} />
-            </div>
-            <h1 className="font-heading mt-12 text-2xl font-bold leading-8 tracking-tight text-foreground">Need a second opinion?</h1>
+          <div className="flex flex-col px-6 py-6">
+            <AnimatedEye size={EMPTY_STATE_EYE_SIZE} />
+            <h1 className="font-heading mt-10 text-2xl font-bold leading-8 tracking-tight text-foreground">Need a second opinion?</h1>
             <p className="mt-2 text-sm leading-5 text-neutral-800">
-              Ask about a transaction, permissions, contract activity, or something that doesn’t feel right.
+              Ask about a transaction, permissions, contract activity, or something that doesn't feel right.
             </p>
           </div>
         ) : (
@@ -157,15 +155,18 @@ export function ChatScreen({ onBack, onClose, initialMessages, sendMessage, clas
         )}
       </div>
 
-      <div className="shrink-0 border-t border-border bg-card px-3 py-2">
-        <div className="flex items-end gap-2">
+      <div className="shrink-0 border-t border-border bg-card px-3 py-3">
+        {/* Bordered pill so the input is unmistakably an input — without it the
+         * border-0 textarea + ghost Send button render invisibly against the
+         * card background and users can't tell the field exists. */}
+        <div className="flex items-end gap-1 rounded-lg border border-border bg-background px-2 py-1 shadow-sm focus-within:border-foreground/40 focus-within:ring-1 focus-within:ring-foreground/10">
           <Textarea
             ref={textareaRef}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            placeholder="Type..."
+            placeholder="Ask Evzi anything…"
             rows={1}
-            className="min-h-9 max-h-40 flex-1 resize-none overflow-y-auto border-0 bg-transparent px-2 py-2 text-sm shadow-none focus-visible:ring-0 md:text-sm"
+            className="min-h-9 max-h-40 flex-1 resize-none overflow-y-auto border-0 bg-transparent px-1 py-1.5 text-sm shadow-none focus-visible:ring-0 md:text-sm"
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
@@ -177,9 +178,13 @@ export function ChatScreen({ onBack, onClose, initialMessages, sendMessage, clas
           />
           <Button
             type="button"
-            variant="ghost"
             size="icon"
-            className="mb-0.5 h-9 w-9 shrink-0 text-foreground hover:bg-muted"
+            className={cn(
+              "mb-1 h-8 w-8 shrink-0 rounded-md transition-opacity",
+              draft.trim() && !pendingAssistant
+                ? "bg-[#171717] text-[#fafafa] hover:bg-[#171717]/90"
+                : "bg-muted text-muted-foreground hover:bg-muted"
+            )}
             onClick={send}
             disabled={pendingAssistant || !draft.trim()}
             aria-label="Send"

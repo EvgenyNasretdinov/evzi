@@ -62,6 +62,16 @@
     @apply bg-transparent;
   }
 
+  /* Real extension popup only — Chrome MV3 sizes the popup window to body
+   * content, so without an explicit width here the first paint collapses to
+   * ~30px and arbitrary `vw`/`vh` units self-reference. The preview dev
+   * server doesn't add this class, so the preview stays full-window. */
+  body.popup-window,
+  body.popup-window > #root {
+    width: 420px;
+    min-width: 420px;
+  }
+
   body {
     @apply font-sans text-foreground antialiased;
   }
