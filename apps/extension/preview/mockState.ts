@@ -82,17 +82,17 @@ export function scenarioToHost(scenario: PreviewScenario): { id: string | null; 
 
   if (scenario === "judging_sim" || scenario === "judging_llm") {
     const stepsSim: import("../src/popup/PopupView").JudgingStep[] = [
-      { id: "decoding",   label: "Decoding calldata",            status: "done",    detail: "Uniswap · V3_SWAP_EXACT_IN → UNWRAP_WETH" },
-      { id: "registry",   label: "Looking up known protocol",    status: "done",    detail: "Trusted Uniswap · UniversalRouter v2" },
-      { id: "sourcify",   label: "Checking Sourcify verification", status: "done",  detail: "Partial match" },
+      { id: "decoding",   label: "Decoding calldata",            status: "done", tone: "ok",   detail: "Uniswap · V3_SWAP_EXACT_IN → UNWRAP_WETH" },
+      { id: "registry",   label: "Looking up known protocol",    status: "done", tone: "ok",   detail: "Trusted Uniswap · UniversalRouter v2" },
+      { id: "sourcify",   label: "Checking Sourcify verification", status: "done", tone: "warn", detail: "Not verified" },
       { id: "simulating", label: "Simulating transaction",       status: "running" },
       { id: "judging",    label: "Asking the agent for a verdict", status: "pending" },
     ];
     const stepsLlm: import("../src/popup/PopupView").JudgingStep[] = [
-      { id: "decoding",   label: "Decoding calldata",            status: "done",    detail: "Uniswap · V3_SWAP_EXACT_IN → UNWRAP_WETH" },
-      { id: "registry",   label: "Looking up known protocol",    status: "done",    detail: "Trusted Uniswap · UniversalRouter v2" },
-      { id: "sourcify",   label: "Checking Sourcify verification", status: "done",  detail: "Partial match" },
-      { id: "simulating", label: "Simulating transaction",       status: "done",    detail: "5 asset changes · gas 126576" },
+      { id: "decoding",   label: "Decoding calldata",            status: "done", tone: "ok",   detail: "Uniswap · V3_SWAP_EXACT_IN → UNWRAP_WETH" },
+      { id: "registry",   label: "Looking up known protocol",    status: "done", tone: "ok",   detail: "Trusted Uniswap · UniversalRouter v2" },
+      { id: "sourcify",   label: "Checking Sourcify verification", status: "done", tone: "warn", detail: "Partial match" },
+      { id: "simulating", label: "Simulating transaction",       status: "done", tone: "ok",   detail: "5 asset changes · gas 126576" },
       { id: "judging",    label: "Asking the agent for a verdict", status: "running" },
     ];
     return {

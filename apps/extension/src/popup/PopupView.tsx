@@ -1,4 +1,4 @@
-import { CheckCircle2, Circle, Loader2, MinusCircle, Shield } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Circle, CircleAlert, Loader2, MinusCircle, Shield } from "lucide-react";
 import { ConfirmIntentScreen } from "./components/ConfirmIntentScreen";
 import { VerdictScreen } from "./components/VerdictScreen";
 import type { JudgeVerdict, DecodedAction, UserIntent, JudgeInput, ContractMeta } from "@intent-check/types";
@@ -10,6 +10,8 @@ export interface JudgingStep {
   id: "decoding" | "registry" | "sourcify" | "simulating" | "judging";
   label: string;
   status: "pending" | "running" | "done" | "skipped";
+  /** Outcome tone, only meaningful when status is "done". Defaults to "ok". */
+  tone?: "ok" | "warn" | "bad";
   detail?: string;
 }
 
@@ -34,11 +36,25 @@ export interface JudgingState {
   enteredAt: number;
 }
 
-function StepIcon({ status }: { status: JudgingStep["status"] }) {
-  if (status === "running") return <Loader2 className="h-4 w-4 shrink-0 animate-spin text-primary" aria-hidden />;
-  if (status === "done")    return <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" aria-hidden />;
-  if (status === "skipped") return <MinusCircle className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />;
+function StepIcon({ step }: { step: JudgingStep }) {
+  if (step.status === "running") return <Loader2 className="h-4 w-4 shrink-0 animate-spin text-primary" aria-hidden />;
+  if (step.status === "skipped") return <MinusCircle className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />;
+  if (step.status === "done") {
+    if (step.tone === "bad")  return <CircleAlert    className="h-4 w-4 shrink-0 text-destructive" aria-hidden />;
+    if (step.tone === "warn") return <AlertTriangle  className="h-4 w-4 shrink-0 text-amber-600" aria-hidden />;
+    return <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" aria-hidden />;
+  }
   return <Circle className="h-4 w-4 shrink-0 text-muted-foreground/40" aria-hidden />;
+}
+
+function stepTextTone(step: JudgingStep): string {
+  if (step.status === "running") return "font-medium text-foreground";
+  if (step.status === "pending") return "text-muted-foreground";
+  if (step.status === "done") {
+    if (step.tone === "bad")  return "text-destructive";
+    if (step.tone === "warn") return "text-amber-700 dark:text-amber-400";
+  }
+  return "text-foreground";
 }
 
 function ProgressList({ steps }: { steps: JudgingStep[] }) {
@@ -47,12 +63,10 @@ function ProgressList({ steps }: { steps: JudgingStep[] }) {
       {steps.map((s) => (
         <li key={s.id} className="flex items-start gap-2.5 text-sm">
           <span className="mt-0.5">
-            <StepIcon status={s.status} />
+            <StepIcon step={s} />
           </span>
           <div className="min-w-0 flex-1">
-            <div className={s.status === "running" ? "font-medium text-foreground" : s.status === "pending" ? "text-muted-foreground" : "text-foreground"}>
-              {s.label}
-            </div>
+            <div className={stepTextTone(s)}>{s.label}</div>
             {s.detail && (
               <div className="truncate text-[11px] text-muted-foreground">{s.detail}</div>
             )}

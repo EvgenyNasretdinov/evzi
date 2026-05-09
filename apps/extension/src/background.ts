@@ -14,13 +14,21 @@ import {
  * A single observable step in the verdict pipeline. Surfaces in the popup as a
  * checklist so the user sees exactly which network call is in flight.
  *
- * Order is fixed; all five entries are always present. `status` advances:
- *   pending → running → done    (or `skipped` for optional steps like Tenderly)
+ * `status` is the lifecycle: pending → running → done (or skipped).
+ * `tone`   is the OUTCOME, only meaningful when status is "done":
+ *    - "ok"   : check passed (green ✓)
+ *    - "warn" : check completed but result is negative or partial (amber ⚠)
+ *    - "bad"  : check failed (red ✗)
+ *    - undefined / "ok" by default
+ *
+ * Splitting status from tone fixes the "green checkmark next to 'Not verified'"
+ * anti-pattern — the step DID finish, but its result is not a positive signal.
  */
 export type JudgingStep = {
   id: "decoding" | "registry" | "sourcify" | "simulating" | "judging";
   label: string;
   status: "pending" | "running" | "done" | "skipped";
+  tone?: "ok" | "warn" | "bad";
   detail?: string;
 };
 
@@ -37,6 +45,7 @@ function makeSteps(overrides: Partial<Record<JudgingStep["id"], Partial<JudgingS
     id: p.id,
     label: p.label,
     status: overrides[p.id]?.status ?? "pending",
+    tone: overrides[p.id]?.tone,
     detail: overrides[p.id]?.detail,
   }));
 }
@@ -428,49 +437,76 @@ chrome.runtime.onMessage.addListener((msg: ContentToBackground, sender) => {
       // The first three steps (decoding/registry/sourcify) already ran in the
       // awaiting_confirm handler — surface them as 'done' so the user sees the
       // full pipeline, not just what's running right now.
-      const decodingDetail = draft.decoded.kind === "swap" && draft.decoded.commands?.length
-        ? `${draft.decoded.protocol} · ${draft.decoded.commands.join(" → ")}`
-        : draft.decoded.kind === "unknown"
-          ? `Unknown · selector ${draft.decoded.selector}`
-          : draft.decoded.kind;
+      // Each step has an outcome tone separate from its lifecycle status: a
+      // "done" step with a negative result (e.g., Sourcify says "not verified")
+      // renders amber instead of green, so the UI matches the actual signal.
+      let decodingDetail: string;
+      let decodingTone: JudgingStep["tone"];
+      if (draft.decoded.kind === "swap" && draft.decoded.commands?.length) {
+        decodingDetail = `${draft.decoded.protocol} · ${draft.decoded.commands.join(" → ")}`;
+        decodingTone = "ok";
+      } else if (draft.decoded.kind === "unknown") {
+        decodingDetail = `Unknown · selector ${draft.decoded.selector}`;
+        decodingTone = "warn";
+      } else {
+        decodingDetail = draft.decoded.kind;
+        decodingTone = "ok";
+      }
+
       const registryDetail = draft.contract.knownProtocol
         ? `Trusted ${draft.contract.knownProtocol.protocol} · ${draft.contract.knownProtocol.name}`
         : "Not in registry";
-      const sourcifyDetail = !draft.contract.verified
-        ? "Not verified"
-        : draft.contract.matchType === "perfect" ? "Perfect match" : "Partial match";
+      const registryTone: JudgingStep["tone"] = draft.contract.knownProtocol ? "ok" : "warn";
+
+      let sourcifyDetail: string;
+      let sourcifyTone: JudgingStep["tone"];
+      if (draft.contract.verified && draft.contract.matchType === "perfect") {
+        sourcifyDetail = "Perfect match";
+        sourcifyTone = "ok";
+      } else if (draft.contract.verified && draft.contract.matchType === "partial") {
+        sourcifyDetail = "Partial match";
+        sourcifyTone = "warn";
+      } else {
+        sourcifyDetail = "Not verified";
+        sourcifyTone = "warn";
+      }
 
       // Step 4: Tenderly simulation.
       await setState(msg.id, {
         phase: "judging", tabId,
         origin: draft.origin, intent: msg.intent, decoded: draft.decoded, contract: draft.contract,
         steps: makeSteps({
-          decoding: { status: "done", detail: decodingDetail },
-          registry: { status: "done", detail: registryDetail },
-          sourcify: { status: "done", detail: sourcifyDetail },
+          decoding: { status: "done", tone: decodingTone, detail: decodingDetail },
+          registry: { status: "done", tone: registryTone, detail: registryDetail },
+          sourcify: { status: "done", tone: sourcifyTone, detail: sourcifyDetail },
           simulating: { status: "running" },
         }),
         enteredAt: Date.now(),
       });
       const sim = tx ? await maybeSimulate(draft.chainId, { from: tx.from, to: tx.to, value: tx.value, data: tx.data }) : undefined;
-      const simDetail = !tx
-        ? "Not applicable (signature request)"
-        : !sim
-          ? "Skipped (Tenderly not configured)"
-          : !sim.success
-            ? `Failed${sim.failureReason ? ` · ${sim.failureReason}` : ""}`
-            : `${sim.assetChanges.length} asset change${sim.assetChanges.length === 1 ? "" : "s"} · gas ${sim.gasUsed}`;
-      const simStatus: JudgingStep["status"] = !tx ? "skipped" : !sim ? "skipped" : sim.success ? "done" : "done";
+
+      let simStatus: JudgingStep["status"];
+      let simTone: JudgingStep["tone"];
+      let simDetail: string;
+      if (!tx) {
+        simStatus = "skipped"; simTone = undefined; simDetail = "Not applicable (signature request)";
+      } else if (!sim) {
+        simStatus = "skipped"; simTone = undefined; simDetail = "Skipped (Tenderly not configured)";
+      } else if (!sim.success) {
+        simStatus = "done"; simTone = "bad"; simDetail = `Failed${sim.failureReason ? ` · ${sim.failureReason}` : ""}`;
+      } else {
+        simStatus = "done"; simTone = "ok"; simDetail = `${sim.assetChanges.length} asset change${sim.assetChanges.length === 1 ? "" : "s"} · gas ${sim.gasUsed}`;
+      }
 
       // Step 5: judge.
       await setState(msg.id, {
         phase: "judging", tabId,
         origin: draft.origin, intent: msg.intent, decoded: draft.decoded, contract: draft.contract,
         steps: makeSteps({
-          decoding: { status: "done", detail: decodingDetail },
-          registry: { status: "done", detail: registryDetail },
-          sourcify: { status: "done", detail: sourcifyDetail },
-          simulating: { status: simStatus, detail: simDetail },
+          decoding: { status: "done", tone: decodingTone, detail: decodingDetail },
+          registry: { status: "done", tone: registryTone, detail: registryDetail },
+          sourcify: { status: "done", tone: sourcifyTone, detail: sourcifyDetail },
+          simulating: { status: simStatus, tone: simTone, detail: simDetail },
           judging: { status: "running" },
         }),
         enteredAt: Date.now(),
