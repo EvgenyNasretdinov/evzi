@@ -1,4 +1,4 @@
-import { decode } from "@intent-check/decoder";
+import { decode, decodeTypedData, parseTypedData, isUnlimitedAmount } from "@intent-check/decoder";
 import { lookupProtocol } from "@intent-check/protocol-registry";
 import { fetchVerifiedContract } from "@intent-check/sourcify-client";
 import { simulate } from "@intent-check/tenderly-client";
@@ -205,6 +205,64 @@ function deterministicFindings(input: { decoded: JudgeInput["decoded"]; contract
       out.push({ code: "SWAP_RECIPIENT_MISMATCH", severity: "warn", text: `Swap proceeds go to ${input.decoded.recipient}, not your wallet.` });
     }
   }
+
+  // ---- Signature-based drainer findings (M3a) ----
+
+  // ERC-2612 Permit: if spender isn't a known protocol address, that's a drainer
+  // pattern — legitimate Permits target Uniswap routers, Permit2, etc.
+  if (input.decoded.kind === "permit") {
+    const spenderInfo = lookupProtocol(input.contract.chainId, input.decoded.spender);
+    const unlimited = isUnlimitedAmount(input.decoded.amount);
+    if (!spenderInfo) {
+      out.push({
+        code: "PERMIT_TO_UNVERIFIED_SPENDER",
+        severity: "danger",
+        text: `Permit signature would let ${input.decoded.spender} spend ${unlimited ? "unlimited " : ""}tokens — spender is not a known protocol.`,
+      });
+    } else if (unlimited) {
+      out.push({
+        code: "PERMIT_UNLIMITED_AMOUNT",
+        severity: "warn",
+        text: `Permit grants unlimited spending to ${spenderInfo.name}.`,
+      });
+    }
+  }
+
+  // Permit2 transfer-from: batch transfers to an unknown spender = classic
+  // drainer payload. Multiple tokens compound the danger.
+  if (input.decoded.kind === "permit2Transfer") {
+    const spenderInfo = lookupProtocol(input.contract.chainId, input.decoded.spender);
+    const tokenCount = input.decoded.permitted.length;
+    if (!spenderInfo) {
+      out.push({
+        code: "PERMIT2_SPENDER_UNKNOWN",
+        severity: "danger",
+        text: `Permit2 signature authorizes ${input.decoded.spender} to move ${tokenCount} token${tokenCount === 1 ? "" : "s"} — spender is not a recognized protocol.`,
+      });
+    }
+    if (tokenCount > 1 && !spenderInfo) {
+      out.push({
+        code: "PERMIT2_BATCH_TRANSFER",
+        severity: "danger",
+        text: `Batch transfer authorization for ${tokenCount} tokens at once — drainers commonly bundle approvals.`,
+      });
+    }
+  }
+
+  // Seaport order: zero-priced offers (selling assets for nothing) are a known
+  // pattern in NFT compromise scams.
+  if (input.decoded.kind === "seaportOrder") {
+    const zeroPrice = input.decoded.consideration.length === 0
+      || input.decoded.consideration.every((c) => c.amount === "0");
+    if (zeroPrice && input.decoded.offer.length > 0) {
+      out.push({
+        code: "SEAPORT_ZERO_PRICE_OFFER",
+        severity: "danger",
+        text: `Seaport order offers your assets for ${input.decoded.consideration.length === 0 ? "no" : "zero"} consideration — equivalent to giving them away.`,
+      });
+    }
+  }
+
   return out;
 }
 
@@ -294,16 +352,41 @@ chrome.runtime.onMessage.addListener((msg: ContentToBackground, sender) => {
       if (tabId === undefined) return;
       const { request, origin, chainIdHex, clickContext, pageSnapshot } = msg.payload;
 
-      if (request.method !== "eth_sendTransaction") {
-        chrome.tabs.sendMessage(tabId, { kind: "judge_error", id: msg.id, message: "method not supported in M2" } as BackgroundToContent);
+      // Resolve {chainId, target address, decoded action} based on the wallet method.
+      // For eth_sendTransaction the target is tx.to; for typed-data signatures it
+      // is the EIP-712 verifying contract. personal_sign has no on-chain target.
+      let chainId: number;
+      let targetAddr: string | undefined;
+      let decoded: JudgeInput["decoded"];
+
+      if (request.method === "eth_sendTransaction") {
+        const tx = request.params[0];
+        chainId = parseInt(chainIdHex ?? tx.chainId ?? "0x2105", 16);
+        targetAddr = tx.to;
+        decoded = await decode({ chainId, to: tx.to, data: tx.data ?? "0x", value: tx.value ?? "0x0", from: tx.from });
+      } else if (request.method === "eth_signTypedData_v4") {
+        // params: [from, typedData JSON or object]
+        const env = parseTypedData(request.params[1]);
+        chainId = env?.domain?.chainId
+          ? (typeof env.domain.chainId === "number" ? env.domain.chainId : parseInt(String(env.domain.chainId), env.domain.chainId.toString().startsWith("0x") ? 16 : 10))
+          : parseInt(chainIdHex ?? "0x1", 16);
+        targetAddr = env?.domain?.verifyingContract;
+        const td = decodeTypedData(request.params[1]);
+        decoded = td ?? { kind: "unknown", selector: "0x712" };
+      } else if (request.method === "personal_sign") {
+        // No on-chain target; classify as a generic sign for the LLM to read.
+        chainId = parseInt(chainIdHex ?? "0x1", 16);
+        targetAddr = undefined;
+        decoded = { kind: "unknown", selector: "0xpersonal_sign" };
+      } else {
+        chrome.tabs.sendMessage(tabId, { kind: "judge_error", id: msg.id, message: `method not supported: ${request.method}` } as BackgroundToContent);
         return;
       }
-      const tx = request.params[0];
-      // Prefer the wallet's reported chainId; fall back to tx.chainId; default Base.
-      const chainId = parseInt(chainIdHex ?? tx.chainId ?? "0x2105", 16);
-      const decoded = await decode({ chainId, to: tx.to, data: tx.data ?? "0x", value: tx.value ?? "0x0", from: tx.from });
-      const v = await fetchVerifiedContract({ chainId, address: tx.to });
-      const known = lookupProtocol(chainId, tx.to);
+
+      // Trust + verification lookups apply to whichever address we resolved.
+      const v = targetAddr ? await fetchVerifiedContract({ chainId, address: targetAddr }) : { verified: false, abi: [] as any[] };
+      const known = targetAddr ? lookupProtocol(chainId, targetAddr) : null;
+
       const intent = await inferIntent({
         snapshot: pageSnapshot,
         origin,
@@ -313,13 +396,11 @@ chrome.runtime.onMessage.addListener((msg: ContentToBackground, sender) => {
           : { kind: decoded.kind },
       });
       const contract: ContractMeta = {
-        address: tx.to,
+        address: targetAddr ?? "0x0000000000000000000000000000000000000000",
         chainId,
         verified: v.verified,
         sourceProvider: v.verified ? "sourcify" : undefined,
         matchType: v.matchType,
-        // Prefer the registry's specific name (e.g. "UniversalRouter v2") over Sourcify's
-        // generic compilation target — registry is hand-curated and more accurate when both exist.
         contractName: known?.name ?? v.contractName,
         isProxy: false,
         knownProtocol: known ? { protocol: known.protocol, name: known.name, kind: known.kind } : undefined,
@@ -339,8 +420,9 @@ chrome.runtime.onMessage.addListener((msg: ContentToBackground, sender) => {
         : null;
       const tabId = s?.tabId;
       if (!draft || tabId === undefined) return;
+      // Tenderly only meaningful for eth_sendTransaction; signature requests
+      // have nothing to simulate (no on-chain effect at sign time).
       const tx = draft.request.method === "eth_sendTransaction" ? draft.request.params[0] : null;
-      if (!tx) return;
 
       // The first three steps (decoding/registry/sourcify) already ran in the
       // awaiting_confirm handler — surface them as 'done' so the user sees the
@@ -369,13 +451,15 @@ chrome.runtime.onMessage.addListener((msg: ContentToBackground, sender) => {
         }),
         enteredAt: Date.now(),
       });
-      const sim = await maybeSimulate(draft.chainId, { from: tx.from, to: tx.to, value: tx.value, data: tx.data });
-      const simDetail = !sim
-        ? "Skipped (Tenderly not configured)"
-        : !sim.success
-          ? `Failed${sim.failureReason ? ` · ${sim.failureReason}` : ""}`
-          : `${sim.assetChanges.length} asset change${sim.assetChanges.length === 1 ? "" : "s"} · gas ${sim.gasUsed}`;
-      const simStatus: JudgingStep["status"] = !sim ? "skipped" : sim.success ? "done" : "done";
+      const sim = tx ? await maybeSimulate(draft.chainId, { from: tx.from, to: tx.to, value: tx.value, data: tx.data }) : undefined;
+      const simDetail = !tx
+        ? "Not applicable (signature request)"
+        : !sim
+          ? "Skipped (Tenderly not configured)"
+          : !sim.success
+            ? `Failed${sim.failureReason ? ` · ${sim.failureReason}` : ""}`
+            : `${sim.assetChanges.length} asset change${sim.assetChanges.length === 1 ? "" : "s"} · gas ${sim.gasUsed}`;
+      const simStatus: JudgingStep["status"] = !tx ? "skipped" : !sim ? "skipped" : sim.success ? "done" : "done";
 
       // Step 5: judge.
       await setState(msg.id, {
@@ -391,13 +475,13 @@ chrome.runtime.onMessage.addListener((msg: ContentToBackground, sender) => {
         enteredAt: Date.now(),
       });
 
-      const findings = deterministicFindings({ decoded: draft.decoded, contract: draft.contract, intent: msg.intent, from: tx.from });
+      const findings = deterministicFindings({ decoded: draft.decoded, contract: draft.contract, intent: msg.intent, from: tx?.from });
       const originSig: OriginSignals = {
         url: draft.pageSnapshot.url, origin: draft.origin,
         pageTitle: draft.pageSnapshot.title, ogTitle: draft.pageSnapshot.ogTitle, ogSiteName: draft.pageSnapshot.ogSiteName,
         visibleButtonText: draft.pageSnapshot.visibleButtonText,
       };
-      const netEffect = sim && tx.from ? computeNetEffect(sim, tx.from) : undefined;
+      const netEffect = sim && tx?.from ? computeNetEffect(sim, tx.from) : undefined;
       const judgeInput: JudgeInput = { intent: msg.intent, decoded: draft.decoded, sim, contract: draft.contract, origin: originSig, findings, request: draft.request, netEffect };
       try {
         const verdict = await callJudge(judgeInput);
