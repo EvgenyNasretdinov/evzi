@@ -256,7 +256,7 @@ export function PopupView({ id, state, judgeInfo, onIntentConfirm, onReject, onA
   }
 
   // --- verdict: designer's VerdictScreen ---
-  const model = buildVerdictScreenModel(state.verdict);
+  const model = buildVerdictScreenModel(state.verdict, state.judgeInput);
   const rawDataText = formatJudgeInputRaw(state.judgeInput, state.origin);
   const dangerPrimaryIsReject = state.verdict.tier === "DANGER";
 

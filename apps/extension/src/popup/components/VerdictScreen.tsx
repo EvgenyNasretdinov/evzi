@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, Check, CheckCircle2, ChevronDown, ChevronUp, CircleAlert, Copy, MessageCircle, X } from "lucide-react";
-import { CHECKLIST_SUBTITLE_FALLBACK, type VerdictChecklistRow } from "@/popup/verdict/verdictContent";
+import type { VerdictChecklistRow } from "@/popup/verdict/verdictContent";
 import { EvziEyeLogo, EvziStatusStripe, type EvziEyeStatus } from "./EvziEyeLogo";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -111,9 +111,11 @@ export function VerdictScreen({
                 </span>
                 <div className="min-w-0 space-y-1">
                   <p className="text-[14px] font-medium leading-5 text-foreground">{row.title}</p>
-                  <p className="text-[14px] font-normal leading-5 text-neutral-600">
-                    {row.description.trim() || CHECKLIST_SUBTITLE_FALLBACK}
-                  </p>
+                  {row.description.trim().length > 0 && (
+                    <p className="text-[14px] font-normal leading-5 text-neutral-600">
+                      {row.description}
+                    </p>
+                  )}
                 </div>
               </li>
             ))}
