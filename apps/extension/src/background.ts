@@ -10,6 +10,37 @@ import {
   CHAIN_ID_TO_NETWORK_ID,
 } from "./shared/config";
 
+/**
+ * A single observable step in the verdict pipeline. Surfaces in the popup as a
+ * checklist so the user sees exactly which network call is in flight.
+ *
+ * Order is fixed; all five entries are always present. `status` advances:
+ *   pending → running → done    (or `skipped` for optional steps like Tenderly)
+ */
+export type JudgingStep = {
+  id: "decoding" | "registry" | "sourcify" | "simulating" | "judging";
+  label: string;
+  status: "pending" | "running" | "done" | "skipped";
+  detail?: string;
+};
+
+const PIPELINE: { id: JudgingStep["id"]; label: string }[] = [
+  { id: "decoding",   label: "Decoding calldata" },
+  { id: "registry",   label: "Looking up known protocol" },
+  { id: "sourcify",   label: "Checking Sourcify verification" },
+  { id: "simulating", label: "Simulating transaction" },
+  { id: "judging",    label: "Asking the agent for a verdict" },
+];
+
+function makeSteps(overrides: Partial<Record<JudgingStep["id"], Partial<JudgingStep>>>): JudgingStep[] {
+  return PIPELINE.map((p) => ({
+    id: p.id,
+    label: p.label,
+    status: overrides[p.id]?.status ?? "pending",
+    detail: overrides[p.id]?.detail,
+  }));
+}
+
 type PhaseState =
   | {
       phase: "awaiting_confirm";
@@ -32,10 +63,14 @@ type PhaseState =
       intent: UserIntent;
       decoded: JudgeInput["decoded"];
       contract: ContractMeta;
-      // Used by the popup spinner to show partial progress, e.g. "Simulating…".
-      step: "fetching_simulation" | "calling_judge";
-      // Wall-clock millisecond timestamp when this step entered. Popup uses it to
-      // detect a stuck state (>60s) and offer a retry without waiting indefinitely.
+      // Per-step progress so the popup can render a checklist of what's done,
+      // running, or pending. Steps run sequentially in this order:
+      //   simulating → judging
+      // (decoding/registry/sourcify run before user-confirm, included as "done"
+      // entries here so the popup shows the full pipeline.)
+      steps: JudgingStep[];
+      // Wall-clock millisecond timestamp when the *current* step entered.
+      // Popup uses it to detect a stuck state (>60s) and offer a retry.
       enteredAt: number;
     }
   | {
@@ -307,20 +342,52 @@ chrome.runtime.onMessage.addListener((msg: ContentToBackground, sender) => {
       const tx = draft.request.method === "eth_sendTransaction" ? draft.request.params[0] : null;
       if (!tx) return;
 
-      // Step 1: Tenderly simulation. Show progress so the popup can spin.
+      // The first three steps (decoding/registry/sourcify) already ran in the
+      // awaiting_confirm handler — surface them as 'done' so the user sees the
+      // full pipeline, not just what's running right now.
+      const decodingDetail = draft.decoded.kind === "swap" && draft.decoded.commands?.length
+        ? `${draft.decoded.protocol} · ${draft.decoded.commands.join(" → ")}`
+        : draft.decoded.kind === "unknown"
+          ? `Unknown · selector ${draft.decoded.selector}`
+          : draft.decoded.kind;
+      const registryDetail = draft.contract.knownProtocol
+        ? `Trusted ${draft.contract.knownProtocol.protocol} · ${draft.contract.knownProtocol.name}`
+        : "Not in registry";
+      const sourcifyDetail = !draft.contract.verified
+        ? "Not verified"
+        : draft.contract.matchType === "perfect" ? "Perfect match" : "Partial match";
+
+      // Step 4: Tenderly simulation.
       await setState(msg.id, {
         phase: "judging", tabId,
         origin: draft.origin, intent: msg.intent, decoded: draft.decoded, contract: draft.contract,
-        step: "fetching_simulation",
+        steps: makeSteps({
+          decoding: { status: "done", detail: decodingDetail },
+          registry: { status: "done", detail: registryDetail },
+          sourcify: { status: "done", detail: sourcifyDetail },
+          simulating: { status: "running" },
+        }),
         enteredAt: Date.now(),
       });
       const sim = await maybeSimulate(draft.chainId, { from: tx.from, to: tx.to, value: tx.value, data: tx.data });
+      const simDetail = !sim
+        ? "Skipped (Tenderly not configured)"
+        : !sim.success
+          ? `Failed${sim.failureReason ? ` · ${sim.failureReason}` : ""}`
+          : `${sim.assetChanges.length} asset change${sim.assetChanges.length === 1 ? "" : "s"} · gas ${sim.gasUsed}`;
+      const simStatus: JudgingStep["status"] = !sim ? "skipped" : sim.success ? "done" : "done";
 
-      // Step 2: judge.
+      // Step 5: judge.
       await setState(msg.id, {
         phase: "judging", tabId,
         origin: draft.origin, intent: msg.intent, decoded: draft.decoded, contract: draft.contract,
-        step: "calling_judge",
+        steps: makeSteps({
+          decoding: { status: "done", detail: decodingDetail },
+          registry: { status: "done", detail: registryDetail },
+          sourcify: { status: "done", detail: sourcifyDetail },
+          simulating: { status: simStatus, detail: simDetail },
+          judging: { status: "running" },
+        }),
         enteredAt: Date.now(),
       });
 
