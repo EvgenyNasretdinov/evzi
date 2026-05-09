@@ -129,31 +129,29 @@
     return lastActionContext;
   }
 
-  function install() {
-    var target = window.ethereum;
-    if (!target) {
-      var attempts = 0;
-      var i = setInterval(function () {
-        attempts += 1;
-        if (window.ethereum) { clearInterval(i); install(); return; }
-        if (attempts >= MAX_ATTEMPTS) { clearInterval(i); }
-      }, 100);
-      return;
-    }
+  var INTERCEPTED_METHODS = new Set([
+    "eth_sendTransaction",
+    "eth_signTypedData_v4",
+    "personal_sign",
+    "wallet_sendCalls",
+  ]);
 
-    if (target.__intentCheckPatched) return;
-
-    var interceptedMethods = new Set([
-      "eth_sendTransaction",
-      "eth_signTypedData_v4",
-      "personal_sign",
-      "wallet_sendCalls",
-    ]);
+  /**
+   * Wrap a provider's request method so intercepted calls flow through our
+   * popup before reaching the real wallet. Idempotent — patching the same
+   * provider twice is a no-op (we mark with __intentCheckPatched).
+   *
+   * Provider can be window.ethereum, or any EIP-6963-announced provider, or
+   * any item inside window.ethereum.providers (legacy multi-wallet array).
+   */
+  function patchProvider(target, label) {
+    if (!target || typeof target !== "object" || typeof target.request !== "function") return false;
+    if (target.__intentCheckPatched) return false;
 
     var originalRequest = target.request.bind(target);
 
     target.request = async function patched(args) {
-      if (!interceptedMethods.has(args.method)) {
+      if (!args || !INTERCEPTED_METHODS.has(args.method)) {
         return originalRequest(args);
       }
 
@@ -194,9 +192,61 @@
 
     target.__intentCheckPatched = true;
     if (globalThis.__INTENT_CHECK_DEBUG === true) {
-      console.log("[intent-check] window.ethereum patched");
+      console.log("[intent-check] patched provider:", label || "(unknown)");
+    }
+    return true;
+  }
+
+  /**
+   * EIP-6963 multi-provider discovery: modern dApps don't call
+   * window.ethereum.request — they listen for `eip6963:announceProvider`,
+   * pick a provider object out of the event detail, and call .request on
+   * THAT object. We patch each announced provider in place; the dApp keeps
+   * the same reference so our patch applies to every subsequent call.
+   *
+   * We also dispatch `eip6963:requestProvider` so wallets that already
+   * announced before our content script ran will re-announce.
+   */
+  function installEip6963() {
+    window.addEventListener("eip6963:announceProvider", function (ev) {
+      try {
+        var detail = ev && ev.detail;
+        if (!detail || !detail.provider) return;
+        var name = detail.info && (detail.info.name || detail.info.rdns) || "EIP-6963";
+        patchProvider(detail.provider, name);
+      } catch (_) { /* never let provider patching break the page */ }
+    }, true);
+
+    // Best-effort kick: if the dApp's listeners are already attached, this
+    // makes wallets re-announce so we can patch them. Harmless if no one
+    // responds.
+    try { window.dispatchEvent(new Event("eip6963:requestProvider")); } catch (_) {}
+  }
+
+  /**
+   * Legacy window.ethereum patching. Modern dApps don't use it, but many
+   * still do as a fallback path. Also patches window.ethereum.providers[]
+   * (legacy multi-wallet array used by Coinbase Wallet et al).
+   */
+  function installLegacy() {
+    var target = window.ethereum;
+    if (!target) {
+      var attempts = 0;
+      var i = setInterval(function () {
+        attempts += 1;
+        if (window.ethereum) { clearInterval(i); installLegacy(); return; }
+        if (attempts >= MAX_ATTEMPTS) { clearInterval(i); }
+      }, 100);
+      return;
+    }
+    patchProvider(target, "window.ethereum");
+    if (Array.isArray(target.providers)) {
+      target.providers.forEach(function (p, idx) {
+        patchProvider(p, "window.ethereum.providers[" + idx + "]");
+      });
     }
   }
 
-  install();
+  installEip6963();
+  installLegacy();
 })();
