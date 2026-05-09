@@ -1,7 +1,7 @@
 import { decode } from "@intent-check/decoder";
 import { fetchVerifiedContract } from "@intent-check/sourcify-client";
 import { simulate } from "@intent-check/tenderly-client";
-import type { JudgeInput, JudgeVerdict, WalletRequest, ContractMeta, OriginSignals, UserIntent, Finding, SimResult } from "@intent-check/types";
+import type { JudgeInput, JudgeVerdict, WalletRequest, ContractMeta, OriginSignals, UserIntent, Finding, SimResult, NetDelta } from "@intent-check/types";
 import type { ContentToBackground, BackgroundToContent, PageSnapshot } from "./shared/messaging";
 import {
   JUDGE_URL, JUDGE_API_KEY,
@@ -77,12 +77,14 @@ function deterministicFindings(input: { decoded: JudgeInput["decoded"]; contract
     out.push({ code: "INTENT_MISMATCH_MINT_VS_APPROVE", severity: "danger", text: "Page looks like a mint but tx is an approval." });
   }
   // Swap proceeds going to a third party — high-signal phishing indicator.
+  // Skip when the decoder already classified the recipient as wallet/router_self
+  // (UR sentinels 0x...0001/0x...0002), or when recipient resolves to the sender.
   if (input.decoded.kind === "swap" && input.from) {
     const sender = input.from.toLowerCase();
     const recipient = input.decoded.recipient.toLowerCase();
-    // Skip when recipient is the router itself (the low-confidence fallback uses router as recipient).
-    const isRouterSelf = recipient === input.decoded.router.toLowerCase();
-    if (!isRouterSelf && recipient !== sender) {
+    const isProtocolSentinel = input.decoded.recipientKind === "wallet" || input.decoded.recipientKind === "router_self";
+    const isRouterAddr = recipient === input.decoded.router.toLowerCase();
+    if (!isProtocolSentinel && !isRouterAddr && recipient !== sender) {
       out.push({ code: "SWAP_RECIPIENT_MISMATCH", severity: "warn", text: `Swap proceeds go to ${input.decoded.recipient}, not your wallet.` });
     }
   }
@@ -96,6 +98,33 @@ async function loadTenderlySettings(): Promise<{ key: string; account: string; p
   const project = r.tenderly_project ?? TENDERLY_PROJECT_SLUG;
   if (!key || !account || !project) return null;
   return { key, account, project };
+}
+
+function computeNetEffect(sim: SimResult, wallet: string): { wallet: string; deltas: NetDelta[] } {
+  const w = wallet.toLowerCase();
+  // Map keyed by `${chainId}:${token}` so we accumulate per-asset deltas correctly.
+  const acc = new Map<string, NetDelta>();
+  for (const c of sim.assetChanges) {
+    const direction = c.to.toLowerCase() === w ? 1 : c.from.toLowerCase() === w ? -1 : 0;
+    if (direction === 0) continue;
+    const key = `${c.token.chainId}:${c.token.address.toLowerCase()}`;
+    const prev = acc.get(key);
+    const signed = (BigInt(c.token.amount) * BigInt(direction));
+    if (prev) {
+      prev.amount = (BigInt(prev.amount) + signed).toString();
+    } else {
+      acc.set(key, {
+        chainId: c.token.chainId,
+        token: c.token.address,
+        symbol: c.token.symbol,
+        decimals: c.token.decimals,
+        amount: signed.toString(),
+      });
+    }
+  }
+  // Drop net-zero entries (e.g. transfers that pass through the wallet).
+  const deltas = Array.from(acc.values()).filter((d) => d.amount !== "0");
+  return { wallet, deltas };
 }
 
 async function maybeSimulate(chainId: number, tx: { from: string; to: string; value?: string; data?: string }): Promise<SimResult | undefined> {
@@ -137,7 +166,7 @@ chrome.runtime.onMessage.addListener((msg: ContentToBackground, sender) => {
       const tx = request.params[0];
       // Prefer the wallet's reported chainId; fall back to tx.chainId; default Base.
       const chainId = parseInt(chainIdHex ?? tx.chainId ?? "0x2105", 16);
-      const decoded = await decode({ chainId, to: tx.to, data: tx.data ?? "0x", value: tx.value ?? "0x0" });
+      const decoded = await decode({ chainId, to: tx.to, data: tx.data ?? "0x", value: tx.value ?? "0x0", from: tx.from });
       const v = await fetchVerifiedContract({ chainId, address: tx.to });
       const intent = inferIntent(pageSnapshot);
       const contract: ContractMeta = {
@@ -169,7 +198,8 @@ chrome.runtime.onMessage.addListener((msg: ContentToBackground, sender) => {
         pageTitle: baseDraft.pageSnapshot.title, ogTitle: baseDraft.pageSnapshot.ogTitle, ogSiteName: baseDraft.pageSnapshot.ogSiteName,
         visibleButtonText: baseDraft.pageSnapshot.visibleButtonText,
       };
-      const judgeInput: JudgeInput = { intent: msg.intent, decoded: baseDraft.decoded, sim, contract: baseDraft.contract, origin: originSig, findings, request: baseDraft.request };
+      const netEffect = sim && tx.from ? computeNetEffect(sim, tx.from) : undefined;
+      const judgeInput: JudgeInput = { intent: msg.intent, decoded: baseDraft.decoded, sim, contract: baseDraft.contract, origin: originSig, findings, request: baseDraft.request, netEffect };
       try {
         const verdict = await callJudge(judgeInput);
         await setState(msg.id, { phase: "verdict_ready", tabId, request: baseDraft.request, origin: baseDraft.origin, pageSnapshot: baseDraft.pageSnapshot, judgeInput, verdict });

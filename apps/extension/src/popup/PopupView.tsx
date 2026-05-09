@@ -13,37 +13,117 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 
-function ContractTrust({ contract, trusted }: { contract: ContractMeta; trusted: boolean }) {
-  let label: string;
-  let tone: "ok" | "warn" | "bad";
-  if (trusted) {
-    label = `Trusted ${contract.contractName ?? "known protocol"}`;
-    tone = "ok";
-  } else if (contract.verified && contract.matchType === "perfect") {
-    label = `Sourcify perfect match${contract.contractName ? ` · ${contract.contractName}` : ""}`;
-    tone = "ok";
-  } else if (contract.verified && contract.matchType === "partial") {
-    label = `Sourcify partial match${contract.contractName ? ` · ${contract.contractName}` : ""}`;
-    tone = "warn";
-  } else {
-    label = "Contract not verified on Sourcify";
-    tone = "warn";
-  }
-  const cls =
-    tone === "ok" ? "text-emerald-700 dark:text-emerald-400"
-    : tone === "warn" ? "text-amber-700 dark:text-amber-400"
-    : "text-destructive";
-  return <p className={cls}>{label}</p>;
+type CheckTone = "ok" | "warn" | "bad" | "info";
+
+interface CheckRow {
+  label: string;
+  detail: string;
+  tone: CheckTone;
 }
 
-function SimulationStatus({ sim }: { sim?: SimResult }) {
+function toneClass(tone: CheckTone) {
+  if (tone === "ok") return "text-emerald-700 dark:text-emerald-400";
+  if (tone === "warn") return "text-amber-700 dark:text-amber-400";
+  if (tone === "bad") return "text-destructive";
+  return "text-muted-foreground";
+}
+
+function toneGlyph(tone: CheckTone) {
+  if (tone === "ok") return "✓";
+  if (tone === "warn") return "⚠";
+  if (tone === "bad") return "✗";
+  return "·";
+}
+
+function shortAddr(a: string) {
+  return a.length > 12 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a;
+}
+
+function buildChecks(input: JudgeInput): CheckRow[] {
+  const rows: CheckRow[] = [];
+  const d = input.decoded;
+  const c = input.contract;
+  const sim = input.sim;
+
+  // Decoded as
+  if (d.kind === "swap") {
+    const cmds = d.commands && d.commands.length > 0 ? d.commands.join(" → ") : "swap";
+    rows.push({ label: "Decoded as", detail: `${d.protocol} · ${cmds}`, tone: "ok" });
+  } else if (d.kind === "approve") {
+    rows.push({ label: "Decoded as", detail: `ERC-20 approve · ${d.isUnlimited ? "unlimited" : d.amount}`, tone: d.isUnlimited ? "bad" : "warn" });
+  } else if (d.kind === "setApprovalForAll") {
+    rows.push({ label: "Decoded as", detail: `setApprovalForAll · ${d.approved ? "granted" : "revoked"}`, tone: d.approved ? "bad" : "ok" });
+  } else if (d.kind === "transfer") {
+    rows.push({ label: "Decoded as", detail: `Transfer to ${shortAddr(d.to)}`, tone: "info" });
+  } else {
+    rows.push({ label: "Decoded as", detail: `Unknown · selector ${d.kind === "unknown" ? d.selector : "?"}`, tone: "warn" });
+  }
+
+  // Contract trust
+  const trustedSwap = d.kind === "swap" && d.trusted === true;
+  if (trustedSwap) {
+    rows.push({ label: "Contract", detail: `Trusted ${c.contractName ?? "known protocol"}`, tone: "ok" });
+  } else if (c.verified && c.matchType === "perfect") {
+    rows.push({ label: "Contract", detail: `Sourcify perfect match${c.contractName ? ` · ${c.contractName}` : ""}`, tone: "ok" });
+  } else if (c.verified && c.matchType === "partial") {
+    rows.push({ label: "Contract", detail: `Sourcify partial match${c.contractName ? ` · ${c.contractName}` : ""}`, tone: "warn" });
+  } else {
+    rows.push({ label: "Contract", detail: "Not verified on Sourcify", tone: "warn" });
+  }
+
+  // Simulation
   if (!sim) {
-    return <p className="text-muted-foreground">Simulation skipped (Tenderly not configured).</p>;
+    rows.push({ label: "Simulation", detail: "Skipped (Tenderly not configured)", tone: "info" });
+  } else if (!sim.success) {
+    rows.push({ label: "Simulation", detail: `Failed${sim.failureReason ? ` · ${sim.failureReason}` : ""}`, tone: "bad" });
+  } else {
+    rows.push({ label: "Simulation", detail: `OK · ${sim.assetChanges.length} asset change${sim.assetChanges.length === 1 ? "" : "s"} · gas ${sim.gasUsed}`, tone: "ok" });
   }
-  if (!sim.success) {
-    return <p className="text-destructive">Simulation failed{sim.failureReason ? `: ${sim.failureReason}` : ""}.</p>;
+
+  // Net effect
+  if (input.netEffect && input.netEffect.deltas.length > 0) {
+    const formatted = input.netEffect.deltas
+      .map((delta) => {
+        const sign = delta.amount.startsWith("-") ? "-" : "+";
+        const symbol = delta.symbol ?? shortAddr(delta.token);
+        return `${sign}${delta.amount.replace(/^-/, "")} ${symbol}`;
+      })
+      .join(", ");
+    rows.push({ label: "Net effect", detail: formatted, tone: "info" });
+  } else if (input.netEffect) {
+    rows.push({ label: "Net effect", detail: "No net change to your wallet", tone: "info" });
   }
-  return <p className="text-emerald-700 dark:text-emerald-400">Simulated successfully · {sim.assetChanges.length} asset change{sim.assetChanges.length === 1 ? "" : "s"} · gas {sim.gasUsed}</p>;
+
+  // Recipient (for swaps)
+  if (d.kind === "swap") {
+    if (d.recipientKind === "wallet") {
+      rows.push({ label: "Recipient", detail: "Your wallet", tone: "ok" });
+    } else if (d.recipientKind === "router_self") {
+      rows.push({ label: "Recipient", detail: "Router-self forwarding (UR convention, normal)", tone: "ok" });
+    } else if (d.recipientKind === "third_party") {
+      rows.push({ label: "Recipient", detail: `Third party · ${shortAddr(d.recipient)}`, tone: "bad" });
+    }
+  }
+
+  // Origin
+  rows.push({ label: "Origin", detail: input.origin.origin, tone: "info" });
+
+  return rows;
+}
+
+function ChecksPanel({ input }: { input: JudgeInput }) {
+  const rows = buildChecks(input);
+  return (
+    <div className="space-y-1.5 rounded-md border bg-muted/30 p-3 text-xs">
+      {rows.map((r) => (
+        <div key={r.label} className="flex items-start gap-2">
+          <span className={`w-3 shrink-0 ${toneClass(r.tone)}`}>{toneGlyph(r.tone)}</span>
+          <span className="w-20 shrink-0 text-muted-foreground">{r.label}</span>
+          <span className={`flex-1 break-words ${toneClass(r.tone)}`}>{r.detail}</span>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export interface AwaitingConfirmState {
@@ -173,15 +253,17 @@ export function PopupView({ id, state, judgeInfo, onIntentConfirm, onReject, onA
                 <DialogDescription>Decoded call and simulation snapshot for this request.</DialogDescription>
               </DialogHeader>
               <div className="space-y-3 text-xs">
-                <ContractTrust contract={state.judgeInput.contract} trusted={state.judgeInput.decoded.kind === "swap" && state.judgeInput.decoded.trusted === true} />
-                <SimulationStatus sim={state.judgeInput.sim} />
-                <pre className="whitespace-pre-wrap rounded-md border bg-muted/50 p-3 font-mono leading-relaxed">{JSON.stringify(state.judgeInput.decoded, null, 2)}</pre>
+                <ChecksPanel input={state.judgeInput} />
+                <details>
+                  <summary className="cursor-pointer text-muted-foreground">Raw decoded action</summary>
+                  <pre className="mt-2 whitespace-pre-wrap rounded-md border bg-muted/50 p-3 font-mono leading-relaxed">{JSON.stringify(state.judgeInput.decoded, null, 2)}</pre>
+                </details>
                 {state.judgeInput.sim && (
-                  <pre className="whitespace-pre-wrap rounded-md border bg-muted/50 p-3 font-mono leading-relaxed">
-                    {JSON.stringify(state.judgeInput.sim.assetChanges, null, 2)}
-                  </pre>
+                  <details>
+                    <summary className="cursor-pointer text-muted-foreground">Raw asset changes</summary>
+                    <pre className="mt-2 whitespace-pre-wrap rounded-md border bg-muted/50 p-3 font-mono leading-relaxed">{JSON.stringify(state.judgeInput.sim.assetChanges, null, 2)}</pre>
+                  </details>
                 )}
-                <p className="text-muted-foreground">Origin: {state.origin}</p>
               </div>
             </DialogContent>
           </Dialog>
