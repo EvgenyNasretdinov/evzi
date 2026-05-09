@@ -5,9 +5,9 @@ export type EvziEyeStatus = "blue" | "yellow" | "red" | "green";
 /** Header status stripe + any UI that must stay in sync with the eye state (Playground#1). */
 export const EVZI_STATUS_ACCENT: Record<EvziEyeStatus, string> = {
   blue: "#74CAFF",
-  yellow: "#FFBE3B",
-  green: "#29A383",
-  red: "#E5484D",
+  yellow: "#FFCD69",
+  green: "#4ACDAA",
+  red: "#F77579",
 };
 
 /** Pixel assets you provided (exported from design); copied verbatim into `public/evzi-eye/`. */

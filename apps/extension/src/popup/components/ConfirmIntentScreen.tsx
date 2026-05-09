@@ -108,8 +108,13 @@ export function ConfirmIntentScreen({
   }
 
   return (
-    <section className={cn("evzi-popup-surface shadow-popup w-full max-w-[420px]", className)}>
-      <header className="flex items-center justify-between px-6 py-4">
+    <section
+      className={cn(
+        "evzi-popup-surface shadow-popup flex max-h-[min(85vh,640px)] w-full max-w-[420px] flex-col overflow-hidden",
+        className
+      )}
+    >
+      <header className="flex shrink-0 items-center justify-between px-6 py-4">
         <EvziEyeLogo status={eyeStatus} />
         {onClose ? (
           <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-foreground/70" onClick={onClose} aria-label="Close">
@@ -120,9 +125,9 @@ export function ConfirmIntentScreen({
         )}
       </header>
 
-      <EvziStatusStripe status={eyeStatus} />
+      <EvziStatusStripe status={eyeStatus} className="shrink-0" />
 
-      <div className="space-y-0">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         <div className="px-6 py-6">
           <div className="space-y-2">
             <h1 className="font-heading text-2xl font-bold leading-8 tracking-tight text-foreground">{mergedAi.title}</h1>
@@ -132,7 +137,7 @@ export function ConfirmIntentScreen({
 
         <Separator />
 
-        <div className="space-y-6 px-6 py-6">
+        <div className="space-y-6 px-6 py-6 pb-4">
           <div className="space-y-2">
             <p className="text-sm leading-5 text-neutral-800">{siteLine}</p>
             <div className="inline-flex h-9 rounded-md bg-muted p-0.5">
@@ -219,28 +224,26 @@ export function ConfirmIntentScreen({
             />
           </div>
         </div>
-
-        <Separator />
-
-        <footer className="flex items-center justify-between gap-3 px-6 py-4">
-          <Button
-            type="button"
-            className="h-9 rounded-md bg-[#171717] px-4 text-sm font-medium text-[#fafafa] shadow-sm hover:bg-[#171717]/90"
-            onClick={handlePrimary}
-          >
-            Confirm and check
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            className="h-8 gap-1.5 rounded-md border-border px-2.5 text-sm font-medium shadow-sm"
-            onClick={() => onTalkToEvzi?.()}
-          >
-            <MessageCircle className="h-4 w-4" aria-hidden />
-            Talk to Evzi.
-          </Button>
-        </footer>
       </div>
+
+      <footer className="flex shrink-0 items-center justify-between gap-3 border-t border-border bg-card px-6 py-4">
+        <Button
+          type="button"
+          className="h-9 rounded-md bg-[#171717] px-4 text-sm font-medium text-[#fafafa] shadow-sm hover:bg-[#171717]/90"
+          onClick={handlePrimary}
+        >
+          Confirm and check
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          className="h-8 gap-1.5 rounded-md border-border px-2.5 text-sm font-medium shadow-sm"
+          onClick={() => onTalkToEvzi?.()}
+        >
+          <MessageCircle className="h-4 w-4" aria-hidden />
+          Talk to Evzi.
+        </Button>
+      </footer>
     </section>
   );
 }
