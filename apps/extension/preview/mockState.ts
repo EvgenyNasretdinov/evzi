@@ -52,7 +52,14 @@ const baseJudgeInput = (overrides?: Partial<JudgeInput>): JudgeInput => ({
   ...overrides,
 });
 
-export type PreviewScenario = "idle" | "awaiting_confirm" | "verdict_safe" | "verdict_caution" | "verdict_danger";
+export type PreviewScenario =
+  | "idle"
+  | "awaiting_confirm"
+  | "judging_sim"
+  | "judging_llm"
+  | "verdict_safe"
+  | "verdict_caution"
+  | "verdict_danger";
 
 export function scenarioToHost(scenario: PreviewScenario): { id: string | null; state: PopupState | null } {
   if (scenario === "idle") return { id: null, state: null };
@@ -72,7 +79,27 @@ export function scenarioToHost(scenario: PreviewScenario): { id: string | null; 
     };
   }
 
-  const verdicts: Record<Exclude<PreviewScenario, "idle" | "awaiting_confirm">, JudgeVerdict> = {
+  if (scenario === "judging_sim" || scenario === "judging_llm") {
+    return {
+      id: MOCK_ID,
+      state: {
+        phase: "judging",
+        origin: "https://app.uniswap.org",
+        intent: baseIntent,
+        decoded: baseDecoded,
+        contract: {
+          address: "0x3333333333333333333333333333333333333333",
+          chainId: 1,
+          verified: true,
+          isProxy: false,
+          contractName: "UniswapV2Router",
+        },
+        step: scenario === "judging_sim" ? "fetching_simulation" : "calling_judge",
+      },
+    };
+  }
+
+  const verdicts: Record<Exclude<PreviewScenario, "idle" | "awaiting_confirm" | "judging_sim" | "judging_llm">, JudgeVerdict> = {
     verdict_safe: {
       tier: "SAFE",
       headline: "Looks consistent with a normal swap.",

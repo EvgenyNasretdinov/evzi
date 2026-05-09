@@ -1,4 +1,5 @@
 import { decode } from "@intent-check/decoder";
+import { lookupProtocol } from "@intent-check/protocol-registry";
 import { fetchVerifiedContract } from "@intent-check/sourcify-client";
 import { simulate } from "@intent-check/tenderly-client";
 import type { JudgeInput, JudgeVerdict, WalletRequest, ContractMeta, OriginSignals, UserIntent, Finding, SimResult, NetDelta } from "@intent-check/types";
@@ -22,6 +23,16 @@ type PhaseState =
         contract: ContractMeta;
         intent: UserIntent;
       };
+    }
+  | {
+      phase: "judging";
+      tabId: number;
+      origin: string;
+      intent: UserIntent;
+      decoded: JudgeInput["decoded"];
+      contract: ContractMeta;
+      // Used by the popup spinner to show partial progress, e.g. "Simulating…".
+      step: "fetching_simulation" | "calling_judge";
     }
   | {
       phase: "verdict_ready";
@@ -66,11 +77,14 @@ function deterministicFindings(input: { decoded: JudgeInput["decoded"]; contract
   if (input.decoded.kind === "setApprovalForAll" && input.decoded.approved) {
     out.push({ code: "SET_APPROVAL_FOR_ALL", severity: "danger", text: `setApprovalForAll on ${input.decoded.collection}` });
   }
-  // Suppress "unverified" warning when calldata decodes as a known protocol with
-  // a recognized router/contract (Sourcify coverage is uneven; relying on it alone
-  // would flag well-known Uniswap routers as suspicious).
-  const isTrustedProtocol = input.decoded.kind === "swap" && input.decoded.trusted === true;
-  if (!input.contract.verified && !isTrustedProtocol) {
+  // Suppress "unverified" warning when:
+  //   (a) we recognize the address from the bundled protocol registry, OR
+  //   (b) the decoder confidently identified the target as a known router shape.
+  // Sourcify coverage is uneven across chains/contracts; relying on it alone
+  // would flag well-known Uniswap routers as suspicious.
+  const trustedByRegistry = input.contract.knownProtocol !== undefined;
+  const trustedByDecoder = input.decoded.kind === "swap" && input.decoded.trusted === true;
+  if (!input.contract.verified && !trustedByRegistry && !trustedByDecoder) {
     out.push({ code: "UNVERIFIED_CONTRACT", severity: "warn", text: "Target contract is not verified on Sourcify." });
   }
   if (input.intent.kind === "mint" && input.decoded.kind === "approve") {
@@ -168,6 +182,7 @@ chrome.runtime.onMessage.addListener((msg: ContentToBackground, sender) => {
       const chainId = parseInt(chainIdHex ?? tx.chainId ?? "0x2105", 16);
       const decoded = await decode({ chainId, to: tx.to, data: tx.data ?? "0x", value: tx.value ?? "0x0", from: tx.from });
       const v = await fetchVerifiedContract({ chainId, address: tx.to });
+      const known = lookupProtocol(chainId, tx.to);
       const intent = inferIntent(pageSnapshot);
       const contract: ContractMeta = {
         address: tx.to,
@@ -175,8 +190,11 @@ chrome.runtime.onMessage.addListener((msg: ContentToBackground, sender) => {
         verified: v.verified,
         sourceProvider: v.verified ? "sourcify" : undefined,
         matchType: v.matchType,
-        contractName: v.contractName,
+        // Prefer the registry's specific name (e.g. "UniversalRouter v2") over Sourcify's
+        // generic compilation target — registry is hand-curated and more accurate when both exist.
+        contractName: known?.name ?? v.contractName,
         isProxy: false,
+        knownProtocol: known ? { protocol: known.protocol, name: known.name, kind: known.kind } : undefined,
       };
 
       await setState(msg.id, { phase: "awaiting_confirm", tabId, baseDraft: { request, origin, pageSnapshot, chainId, decoded, contract, intent } });
@@ -191,7 +209,21 @@ chrome.runtime.onMessage.addListener((msg: ContentToBackground, sender) => {
       const tx = baseDraft.request.method === "eth_sendTransaction" ? baseDraft.request.params[0] : null;
       if (!tx) return;
 
+      // Step 1: Tenderly simulation. Show progress so the popup can spin.
+      await setState(msg.id, {
+        phase: "judging", tabId,
+        origin: baseDraft.origin, intent: msg.intent, decoded: baseDraft.decoded, contract: baseDraft.contract,
+        step: "fetching_simulation",
+      });
       const sim = await maybeSimulate(baseDraft.chainId, { from: tx.from, to: tx.to, value: tx.value, data: tx.data });
+
+      // Step 2: judge.
+      await setState(msg.id, {
+        phase: "judging", tabId,
+        origin: baseDraft.origin, intent: msg.intent, decoded: baseDraft.decoded, contract: baseDraft.contract,
+        step: "calling_judge",
+      });
+
       const findings = deterministicFindings({ decoded: baseDraft.decoded, contract: baseDraft.contract, intent: msg.intent, from: tx.from });
       const originSig: OriginSignals = {
         url: baseDraft.pageSnapshot.url, origin: baseDraft.origin,

@@ -7,6 +7,8 @@ import { scenarioToHost, type PreviewScenario } from "./mockState";
 const SCENARIOS: { id: PreviewScenario; label: string }[] = [
   { id: "idle", label: "Idle" },
   { id: "awaiting_confirm", label: "Confirm intent" },
+  { id: "judging_sim", label: "Loading · simulating" },
+  { id: "judging_llm", label: "Loading · agent" },
   { id: "verdict_safe", label: "Verdict · safe" },
   { id: "verdict_caution", label: "Verdict · caution" },
   { id: "verdict_danger", label: "Verdict · danger" },

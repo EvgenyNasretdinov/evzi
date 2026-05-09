@@ -1,7 +1,7 @@
-import { Shield } from "lucide-react";
+import { Loader2, Shield } from "lucide-react";
 import { VerdictChip } from "./components/VerdictChip";
 import { IntentConfirm } from "./components/IntentConfirm";
-import type { JudgeVerdict, DecodedAction, UserIntent, JudgeInput, ContractMeta, SimResult } from "@intent-check/types";
+import type { JudgeVerdict, DecodedAction, UserIntent, JudgeInput, ContractMeta } from "@intent-check/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -59,9 +59,11 @@ function buildChecks(input: JudgeInput): CheckRow[] {
     rows.push({ label: "Decoded as", detail: `Unknown · selector ${d.kind === "unknown" ? d.selector : "?"}`, tone: "warn" });
   }
 
-  // Contract trust
+  // Contract trust — registry is authoritative, then decoder, then Sourcify.
   const trustedSwap = d.kind === "swap" && d.trusted === true;
-  if (trustedSwap) {
+  if (c.knownProtocol) {
+    rows.push({ label: "Contract", detail: `Trusted ${c.knownProtocol.protocol} · ${c.knownProtocol.name}`, tone: "ok" });
+  } else if (trustedSwap) {
     rows.push({ label: "Contract", detail: `Trusted ${c.contractName ?? "known protocol"}`, tone: "ok" });
   } else if (c.verified && c.matchType === "perfect") {
     rows.push({ label: "Contract", detail: `Sourcify perfect match${c.contractName ? ` · ${c.contractName}` : ""}`, tone: "ok" });
@@ -136,6 +138,15 @@ export interface AwaitingConfirmState {
   };
 }
 
+export interface JudgingState {
+  phase: "judging";
+  origin: string;
+  intent: UserIntent;
+  decoded: DecodedAction;
+  contract: ContractMeta;
+  step: "fetching_simulation" | "calling_judge";
+}
+
 export interface VerdictReadyState {
   phase: "verdict_ready";
   verdict: JudgeVerdict;
@@ -144,7 +155,7 @@ export interface VerdictReadyState {
   pageSnapshot: { title?: string };
 }
 
-export type PopupState = AwaitingConfirmState | VerdictReadyState;
+export type PopupState = AwaitingConfirmState | JudgingState | VerdictReadyState;
 
 function reasonClass(severity: JudgeVerdict["reasons"][number]["severity"]) {
   if (severity === "danger") return "text-destructive";
@@ -215,6 +226,32 @@ export function PopupView({ id, state, judgeInfo, onIntentConfirm, onReject, onA
           </CardHeader>
           <CardContent className="pt-0">
             <IntentConfirm initial={state.baseDraft.intent} onConfirm={(intent) => onIntentConfirm(id, intent)} />
+          </CardContent>
+          <JudgeInfoFooter info={judgeInfo} />
+        </Card>
+      </div>
+    );
+  }
+
+  if (state.phase === "judging") {
+    const stepLabel = state.step === "fetching_simulation"
+      ? "Simulating transaction…"
+      : "Asking the agent for a verdict…";
+    return (
+      <div className="w-[380px] bg-background p-3">
+        <Card>
+          <CardHeader className="space-y-1 pb-4">
+            <CardTitle className="text-base">Intent Check</CardTitle>
+            <CardDescription className="truncate text-xs">{state.origin}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 pt-0">
+            <div className="flex items-center gap-3 rounded-md border bg-muted/40 p-3 text-sm">
+              <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" aria-hidden />
+              <span>{stepLabel}</span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Intent: <span className="font-medium text-foreground">{state.intent.summary}</span>
+            </p>
           </CardContent>
           <JudgeInfoFooter info={judgeInfo} />
         </Card>

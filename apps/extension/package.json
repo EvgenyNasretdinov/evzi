@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@intent-check/decoder": "workspace:*",
+    "@intent-check/protocol-registry": "workspace:*",
     "@intent-check/sourcify-client": "workspace:*",
     "@intent-check/tenderly-client": "workspace:*",
     "@intent-check/types": "workspace:*",
