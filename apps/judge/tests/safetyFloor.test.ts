@@ -92,4 +92,22 @@ describe("safety floor — trust ceiling", () => {
     expect(r.reasons.length).toBe(1);
     expect(r.reasons[0].text).toBe("slight thing");
   });
+
+  // M2.7 — registry-based trust ceiling (works even when decoded.kind === "unknown")
+  it("clamps DANGER to CAUTION when decoded is unknown but contract is in registry", () => {
+    const danger: JudgeVerdict = { ...llm, tier: "DANGER" };
+    const input: JudgeInput = {
+      ...trustedSwapInput(),
+      decoded: { kind: "unknown", selector: "0x24856bc3" },
+      contract: {
+        address: "0x8B844f885672f333Bc0042cB669255f93a4C1E6b",
+        chainId: 10,
+        verified: false,
+        isProxy: false,
+        knownProtocol: { protocol: "Uniswap", name: "UniversalRouter v2", kind: "router" },
+      },
+    };
+    const r = applySafetyFloor(danger, input);
+    expect(r.tier).toBe("CAUTION");
+  });
 });

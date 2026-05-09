@@ -11,10 +11,17 @@ function findingsTier(findings: Finding[]): VerdictTier {
  * LLM's verdict to ≤ CAUTION. This is the "trust ceiling": the LLM cannot
  * escalate to DANGER on a hunch about a transaction we already vetted as
  * a known protocol with a successful simulation and no danger findings.
+ *
+ * Trust comes from EITHER:
+ *  - the decoder identifying the call as a known router shape (decoded.trusted), OR
+ *  - the contract address matching our bundled protocol registry (contract.knownProtocol).
+ * The second case lets a brand-new UR variant whose calldata we can't yet decode
+ * still benefit from the trust ceiling, as long as the address is whitelisted.
  */
 function isDeterministicallyTrusted(input: JudgeInput): boolean {
-  if (input.decoded.kind !== "swap") return false;
-  if (input.decoded.trusted !== true) return false;
+  const trustedByDecoder = input.decoded.kind === "swap" && input.decoded.trusted === true;
+  const trustedByRegistry = input.contract.knownProtocol !== undefined;
+  if (!trustedByDecoder && !trustedByRegistry) return false;
   if (!input.sim || !input.sim.success) return false;
   if (input.findings.some((f) => f.severity === "danger")) return false;
   return true;
