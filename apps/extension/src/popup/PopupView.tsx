@@ -217,7 +217,7 @@ export function PopupView({
 
   if (chatOpen) {
     return (
-      <div className="w-[420px] bg-transparent p-1.5">
+      <div className="w-[420px] bg-transparent">
         <ChatScreen
           key={chatSessionId}
           initialMessages={chatSeed}
@@ -232,7 +232,7 @@ export function PopupView({
   // --- idle ---
   if (!state || !id) {
     return (
-      <div className="w-[420px] bg-transparent p-1.5">
+      <div className="w-[420px] bg-transparent">
         <IdleScreen onClose={() => window.close()} onTalkToEvzi={() => openChat()} />
       </div>
     );
@@ -241,7 +241,7 @@ export function PopupView({
   // --- awaiting confirm: designer's ConfirmIntentScreen ---
   if (state.phase === "awaiting_confirm") {
     return (
-      <div className="w-[420px] bg-transparent p-1.5">
+      <div className="w-[420px] bg-transparent">
         <ConfirmIntentScreen
           eyeStatus="blue"
           aiMessage={aiMessageFromClick(state.baseDraft.clickContext)}
@@ -261,7 +261,7 @@ export function PopupView({
     const stuck = Date.now() - state.enteredAt > 90_000;
     if (stuck) {
       return (
-        <div className="w-[380px] bg-transparent p-1.5">
+        <div className="w-[380px] bg-transparent">
           <Card className="evzi-popup-surface shadow-popup border-0">
             <CardHeader className="space-y-1 pb-4">
               <CardTitle className="text-base">EVZI</CardTitle>
@@ -282,7 +282,7 @@ export function PopupView({
       );
     }
     return (
-      <div className="w-[380px] bg-transparent p-1.5">
+      <div className="w-[380px] bg-transparent">
         <Card className="evzi-popup-surface shadow-popup border-0">
           <CardHeader className="space-y-1 pb-4">
             <CardTitle className="text-base">Running checks…</CardTitle>
@@ -303,7 +303,7 @@ export function PopupView({
   // --- error: retry / reject ---
   if (state.phase === "error") {
     return (
-      <div className="w-[380px] bg-transparent p-1.5">
+      <div className="w-[380px] bg-transparent">
         <Card className="evzi-popup-surface shadow-popup border-0">
           <CardHeader className="space-y-1 pb-4">
             <CardTitle className="text-base">EVZI</CardTitle>
@@ -344,7 +344,7 @@ export function PopupView({
   }
 
   return (
-    <div className="w-[420px] bg-transparent p-1.5">
+    <div className="w-[420px] bg-transparent">
       <VerdictScreen
         eyeStatus={model.eyeStatus}
         title={model.title}
