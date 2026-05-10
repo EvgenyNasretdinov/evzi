@@ -158,17 +158,16 @@ export function ChatScreen({ onBack, onClose, initialMessages, sendMessage, clas
       </div>
 
       <div className="shrink-0 border-t border-border bg-card px-3 py-3">
-        {/* Bordered pill so the input is unmistakably an input — without it the
-         * border-0 textarea + ghost Send button render invisibly against the
-         * card background and users can't tell the field exists. */}
-        <div className="flex items-end gap-1 rounded-lg border border-border bg-background px-2 py-1 shadow-sm focus-within:border-foreground/40 focus-within:ring-1 focus-within:ring-foreground/10">
+        {/* No bordered pill — input reads as plain text in the typing area.
+         * The Send button on the right is the only visual affordance. */}
+        <div className="flex items-end gap-1">
           <Textarea
             ref={textareaRef}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             placeholder="Ask Evzi anything…"
             rows={1}
-            className="min-h-9 max-h-40 flex-1 resize-none overflow-y-auto border-0 bg-transparent px-1 py-1.5 text-sm shadow-none focus-visible:ring-0 md:text-sm"
+            className="min-h-9 max-h-40 flex-1 resize-none overflow-y-auto border-0 bg-transparent p-0 text-sm shadow-none focus-visible:ring-0 md:text-sm"
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();

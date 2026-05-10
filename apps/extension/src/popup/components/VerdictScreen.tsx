@@ -224,8 +224,6 @@ export function VerdictScreen({
           </ul>
         </div>
 
-        <Separator />
-
         {/* Screens 4–5: Raw data — hug-content toggle + copy; no outer section border */}
         <div className="px-6 py-4">
           <Collapsible open={rawOpen} onOpenChange={setRawOpen}>
