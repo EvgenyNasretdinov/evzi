@@ -8,14 +8,40 @@ import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
+const SEVERITY_HINT: Record<VerdictChecklistRow["severity"], { label: string; body: string } | null> = {
+  pass: null,
+  caution: {
+    label: "Caution",
+    body: "Worth a closer look — not a hard stop, but the agent thinks this signal is worth verifying before you sign.",
+  },
+  fail: {
+    label: "Fail",
+    body: "Hard fail from a deterministic rule. The LLM can't soften this — signing risks losing assets or granting unwanted permissions.",
+  },
+};
+
 function RowIcon({ row }: { row: VerdictChecklistRow }) {
+  // Pass icons are self-explanatory — no tooltip.
   if (row.severity === "pass") {
     return <CheckCircle2 className="h-4 w-4 shrink-0 text-[#4ACDAA]" aria-hidden />;
   }
-  if (row.severity === "caution") {
-    return <AlertTriangle className="h-4 w-4 shrink-0 text-[#FFCD69]" aria-hidden />;
-  }
-  return <CircleAlert className="h-4 w-4 shrink-0 text-[#F77579]" aria-hidden />;
+  const hint = SEVERITY_HINT[row.severity];
+  const Icon = row.severity === "caution" ? AlertTriangle : CircleAlert;
+  const colorClass = row.severity === "caution" ? "text-[#FFCD69]" : "text-[#F77579]";
+  if (!hint) return <Icon className={cn("h-4 w-4 shrink-0", colorClass)} aria-hidden />;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span tabIndex={0} className="inline-flex cursor-help outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-sm">
+          <Icon className={cn("h-4 w-4 shrink-0", colorClass)} aria-label={hint.label} />
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="right" align="start">
+        <p className="font-medium text-foreground">{hint.label}</p>
+        <p className="mt-1 text-muted-foreground">{hint.body}</p>
+      </TooltipContent>
+    </Tooltip>
+  );
 }
 
 type SourceKey = NonNullable<VerdictChecklistRow["source"]>;
