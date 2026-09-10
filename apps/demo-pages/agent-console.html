@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Evzi · AI portfolio agent</title>
+<style>
+  :root { --bg:#0f1115; --panel:#171a21; --line:#262b36; --text:#e8eaed; --dim:#9aa3b2;
+          --ok:#3fb950; --warn:#d29922; --bad:#f85149; --accent:#7c9cff; }
+  * { box-sizing: border-box; }
+  body { font-family: system-ui,-apple-system,sans-serif; background: var(--bg); color: var(--text);
+         max-width: 780px; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; line-height: 1.55; }
+  h1 { font-size: 1.35rem; margin: 0 0 .2rem; }
+  .lede { color: var(--dim); margin: 0 0 1.75rem; font-size: .95rem; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+           padding: 1.1rem 1.2rem; margin-bottom: 1rem; }
+  label { display:block; font-size:.8rem; text-transform:uppercase; letter-spacing:.04em;
+          color: var(--dim); margin-bottom:.4rem; }
+  textarea { width:100%; background:#0c0e12; color:var(--text); border:1px solid var(--line);
+             border-radius:8px; padding:.7rem .8rem; font: inherit; font-size:.92rem; resize:vertical; }
+  button { background: var(--accent); color:#0b0d11; border:0; border-radius:7px; font-weight:650;
+           padding:.55rem 1rem; font-size:.9rem; cursor:pointer; }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  button.ghost { background:transparent; color:var(--accent); border:1px solid var(--line); }
+  .row { display:flex; gap:.6rem; align-items:center; flex-wrap:wrap; margin-top:.85rem; }
+  .hash { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:.82rem; color:var(--dim); }
+  #feed { display:flex; flex-direction:column; gap:.7rem; }
+  .ev { border:1px solid var(--line); border-left-width:3px; border-radius:8px; padding:.7rem .9rem;
+        background:#12151b; font-size:.9rem; }
+  .ev.agent  { border-left-color: var(--accent); }
+  .ev.allow  { border-left-color: var(--ok); }
+  .ev.approve{ border-left-color: var(--warn); }
+  .ev.reject { border-left-color: var(--bad); }
+  .ev .who { font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:var(--dim); margin-bottom:.25rem; }
+  .ev code { font-family: ui-monospace, Menlo, monospace; font-size:.82em; color:#c9d1d9;
+             background:#0c0e12; padding:1px 5px; border-radius:4px; }
+  .f { margin:.3rem 0 0; padding-left:1rem; font-size:.86rem; color:var(--dim); }
+  .f b.bad { color: var(--bad); } .f b.warn { color: var(--warn); }
+  .verdict { font-weight:700; letter-spacing:.02em; }
+  .verdict.ALLOW{color:var(--ok);} .verdict.REJECT{color:var(--bad);} .verdict.REQUIRE_APPROVAL{color:var(--warn);}
+  .note { color:var(--dim); font-size:.82rem; margin-top:1.5rem; }
+</style>
+</head>
+<body>
+
+<h1>AI portfolio agent</h1>
+<p class="lede">
+  An agent that proposes on-chain actions on your behalf. Evzi verifies every proposal
+  against the authorization you froze — independently, and without asking the agent.
+</p>
+
+<div class="panel">
+  <label for="goal">What should the agent do?</label>
+  <textarea id="goal" rows="2">Swap at most 500 USDC to ETH on Base, max 1% slippage, no unlimited approvals</textarea>
+  <div class="row">
+    <button id="authorize">Freeze authorization</button>
+    <span class="hash" id="authHash"></span>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="row" style="margin-top:0">
+    <button id="run" disabled>Let the agent act</button>
+    <button id="reset" class="ghost">Reset</button>
+  </div>
+</div>
+
+<div id="feed"></div>
+
+<p class="note">
+  The agent talks only to <code>/agent/plan</code>. It never sees the verifier's internals and
+  cannot alter the authorization — it only reads back the finding codes it was refused with.
+</p>
+
+<script type="module">
+const JUDGE = localStorage.getItem("evzi.judge") || "http://127.0.0.1:8787";
+const KEY   = localStorage.getItem("evzi.key")   || "local-dev-key";
+const WALLET_FALLBACK = "0x1111111111111111111111111111111111111111";
+
+const $ = (id) => document.getElementById(id);
+const feed = $("feed");
+let authorization = null;
+let wallet = WALLET_FALLBACK;
+
+function ev(cls, who, html) {
+  const d = document.createElement("div");
+  d.className = `ev ${cls}`;
+  d.innerHTML = `<div class="who">${who}</div>${html}`;
+  feed.appendChild(d);
+  d.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+/** Canonical JSON — must match packages/intent exactly or the hash will not verify. */
+function canonicalize(v) {
+  if (v === null) return "null";
+  if (Array.isArray(v)) return `[${v.map((x) => canonicalize(x === undefined ? null : x)).join(",")}]`;
+  if (typeof v === "object") {
+    return `{${Object.entries(v)
+      .filter(([, x]) => x !== undefined)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([k, x]) => `${JSON.stringify(k)}:${canonicalize(x)}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(v) ?? "null";
+}
+
+async function sha256Hex(s) {
+  const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
+  return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * Parse the goal into constraints. A real deployment sends this to
+ * /infer-intent; the demo keeps it local so the flow works without a model and
+ * so the constraints shown are exactly the ones enforced.
+ */
+function parseGoal(raw) {
+  const cap = raw.match(/([\d.]+)\s*USDC/i);
+  const bps = raw.match(/([\d.]+)\s*%/);
+  const units = cap ? BigInt(Math.round(parseFloat(cap[1]) * 1e6)).toString() : "500000000";
+  return {
+    chainIds: [/base/i.test(raw) ? 8453 : 1],
+    maxSpend: [{ chainId: /base/i.test(raw) ? 8453 : 1,
+                 token: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913", amount: units }],
+    allowedRecipients: [],
+    allowUnlimitedApproval: !/no unlimited/i.test(raw),
+    maxSlippageBps: bps ? Math.round(parseFloat(bps[1]) * 100) : undefined,
+  };
+}
+
+async function post(path, body) {
+  const r = await fetch(`${JUDGE}${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-api-key": KEY },
+    body: JSON.stringify(body),
+  });
+  return r.json();
+}
+
+$("authorize").onclick = async () => {
+  const raw = $("goal").value.trim();
+  const constraints = parseGoal(raw);
+  const draft = {
+    id: crypto.randomUUID(),
+    raw,
+    goal: { kind: "swap", summary: raw, confidence: 0.9 },
+    constraints,
+    createdAt: Date.now(),
+  };
+  authorization = { ...draft, hash: await sha256Hex(canonicalize(draft)) };
+
+  if (window.ethereum) {
+    try {
+      const [a] = await window.ethereum.request({ method: "eth_requestAccounts" });
+      if (a) wallet = a;
+    } catch { /* stay on the fallback address */ }
+  }
+
+  $("authHash").textContent = `authorization #${authorization.hash.slice(0, 6)}`;
+  $("run").disabled = false;
+  ev("agent", "You",
+    `Authorized: <code>${raw}</code>` +
+    `<div class="f">cap ${constraints.maxSpend[0].amount} units · chain ${constraints.chainIds[0]} · ` +
+    `unlimited approvals ${constraints.allowUnlimitedApproval ? "allowed" : "forbidden"}</div>`);
+};
+
+$("reset").onclick = () => {
+  feed.innerHTML = ""; authorization = null;
+  $("authHash").textContent = ""; $("run").disabled = true;
+};
+
+$("run").onclick = async () => {
+  $("run").disabled = true;
+  let feedback = [];
+
+  for (let round = 1; round <= 2; round++) {
+    const plan = await post("/agent/plan", { authorization, from: wallet, feedback });
+    if (!plan.calls?.length) { ev("reject", "Agent", "No proposal."); break; }
+
+    ev("agent", `Agent · attempt ${plan.attempt}`,
+      `${plan.rationale}<div class="f"><code>${plan.calls[0].data.slice(0, 26)}…</code> → ${plan.calls[0].to.slice(0, 12)}…</div>`);
+
+    const res = await post("/verify", { authorization, calls: plan.calls });
+    const findings = res.calls?.[0]?.findings ?? [];
+    const cls = res.policy === "ALLOW" ? "allow" : res.policy === "REJECT" ? "reject" : "approve";
+
+    ev(cls, "Evzi verifier",
+      `<span class="verdict ${res.policy}">${res.policy.replace("_", " ")}</span>` +
+      findings.map((f) => `<div class="f"><b class="${f.severity}">${f.code}</b> — ${f.text}</div>`).join("") +
+      (res.onchain?.token?.symbol
+        ? `<div class="f">live Graph data: ${res.onchain.token.symbol}, canonical = ${res.onchain.token.canonical}` +
+          (res.onchain.token.holders ? `, ${res.onchain.token.holders.toLocaleString()} holders` : "") + `</div>`
+        : ""));
+
+    if (res.policy === "ALLOW") {
+      ev("allow", "You", "Proposal matches what you authorized. Safe to sign.");
+      break;
+    }
+    if (res.policy === "REQUIRE_APPROVAL") {
+      ev("approve", "You", "Needs your confirmation — this is where a Ledger tap goes.");
+      break;
+    }
+    feedback = findings;
+  }
+  $("run").disabled = false;
+};
+</script>
+</body>
+</html>

@@ -23,6 +23,11 @@
 
 <ul>
   <li>
+    <h2>0. Agent intent firewall (ETHOnline 2026)</h2>
+    <p>An AI agent proposes on-chain actions under an authorization you froze. Evzi verifies each proposal independently: the agent's first attempt asks for an unlimited allowance and is <strong>REJECTED</strong>, it reads the finding codes back, narrows to the authorized cap, and is <strong>ALLOWED</strong>. Needs the judge worker running on <code>:8787</code>.</p>
+    <a class="btn" href="./agent-console.html">Open agent console →</a>
+  </li>
+  <li>
     <h2>1. Hidden approval ("free mint" drainer)</h2>
     <p>Page styled like an NFT mint, button actually triggers <code>USDC.approve(0xdEaD…, MAX_UINT256)</code> on Base. The deterministic <code>UNLIMITED_APPROVAL</code> finding should fire and force <strong>DANGER</strong>.</p>
     <a class="btn" href="./fake-mint.html">Open fake-mint demo →</a>
