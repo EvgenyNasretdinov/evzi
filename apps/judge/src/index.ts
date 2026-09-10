@@ -38,6 +38,8 @@ mountJudge(app, (c) => ({
     : c.env.LLM_PROVIDER === "openai" ? "openai"
     : undefined,
   apiKey: c.env.JUDGE_API_KEY,
+  graphApiKey: c.env.GRAPH_API_KEY,
+  tokenApiJwt: c.env.GRAPH_TOKEN_API_JWT,
 }));
 
 // Agent-facing deterministic verifier. Shares the judge's api key but consults

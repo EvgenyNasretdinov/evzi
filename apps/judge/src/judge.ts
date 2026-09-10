@@ -1,7 +1,9 @@
 import type { Hono, Context } from "hono";
-import type { JudgeInput, JudgeVerdict, UserIntent } from "@intent-check/types";
+import type { Finding, JudgeInput, JudgeVerdict, OnchainContext, UserIntent } from "@intent-check/types";
 import { applySafetyFloor } from "./safetyFloor";
-import { derivePolicy } from "@intent-check/intent";
+import { derivePolicy, extractSpend } from "@intent-check/intent";
+import { fetchOnchainContext, graphFindings } from "@intent-check/onchain-context";
+import { claimedSymbolFor } from "./claimedSymbol";
 import { llmJudge } from "./anthropic";
 import { llmJudgeOpenAI } from "./openai";
 import { inferIntentLLM, type InferIntentInput } from "./inferIntent";
@@ -20,6 +22,11 @@ export interface JudgeOptions {
   llmOverride?: (input: JudgeInput) => Promise<JudgeVerdict>; // for tests
   inferIntentOverride?: (input: InferIntentInput) => Promise<UserIntent>; // for tests
   chatOverride?: (request: ChatRequest) => Promise<ChatReply>; // for tests
+  /** Graph Network gateway key — enables on-chain enrichment. */
+  graphApiKey?: string;
+  /** thegraph.market JWT for the Token API. */
+  tokenApiJwt?: string;
+  onchainOverride?: (a: { chainId: number; token?: string; wallet?: string }) => Promise<OnchainContext>; // for tests
 }
 
 /**
@@ -39,6 +46,44 @@ export type JudgeOptionsLike = JudgeOptions | ((c: Context<any>) => JudgeOptions
 
 function resolveOpts(c: Context<any>, optsLike: JudgeOptionsLike): JudgeOptions {
   return typeof optsLike === "function" ? optsLike(c) : optsLike;
+}
+
+/**
+ * Attach live on-chain context and the findings derived from it.
+ *
+ * Done here rather than in the extension so the Graph credentials never leave
+ * the server. A caller that already did this work keeps its own context; a
+ * caller with no credentials configured is left exactly as it was, which is why
+ * every pre-existing golden fixture still holds.
+ */
+async function enrichWithOnchain(input: JudgeInput, opts: JudgeOptions): Promise<JudgeInput> {
+  if (input.onchain) return input;
+  if (!opts.graphApiKey && !opts.tokenApiJwt && !opts.onchainOverride) return input;
+
+  const chainId = input.contract.chainId;
+  const { movements } = extractSpend(input.decoded, chainId);
+  const primary = movements[0];
+  const wallet = input.request.method === "eth_sendTransaction"
+    ? input.request.params[0]?.from
+    : undefined;
+
+  const onchain = opts.onchainOverride
+    ? await opts.onchainOverride({ chainId, token: primary?.token, wallet })
+    : await fetchOnchainContext({
+        chainId,
+        token: primary?.token,
+        wallet,
+        graphApiKey: opts.graphApiKey,
+        tokenApiJwt: opts.tokenApiJwt,
+      });
+
+  const extra: Finding[] = graphFindings(onchain, {
+    claimedSymbol: claimedSymbolFor(input, primary?.token) ?? onchain.token?.symbol,
+    isUnlimitedApproval: primary?.isUnlimited,
+    approvedToken: primary?.token,
+  });
+
+  return { ...input, onchain, findings: [...input.findings, ...extra] };
 }
 
 /**
@@ -136,6 +181,8 @@ export function mountJudge(app: Hono<any>, optsLike: JudgeOptionsLike) {
     let input: JudgeInput;
     try { input = (await c.req.json()) as JudgeInput; }
     catch { return c.json({ error: "invalid_json" }, 400); }
+
+    input = await enrichWithOnchain(input, opts);
 
     if (opts.stubVerdict) {
       const v: JudgeVerdict = { tier: "SAFE", headline: stubHeadline(input), reasons: [{ severity: "info", text: "Stubbed verdict." }], confidence: 0.5 };
