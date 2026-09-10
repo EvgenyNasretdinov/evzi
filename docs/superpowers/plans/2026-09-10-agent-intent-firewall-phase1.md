@@ -19,7 +19,7 @@
 - All amounts are raw integer strings; compare with `BigInt`, never `Number`.
 - Addresses are compared lowercased; never assume checksum casing.
 - TDD: write the failing test, watch it fail, implement minimally, watch it pass, commit.
-- Commits: imperative mood, no AI co-author trailers in this repo's convention — but this session's harness requires the `Co-Authored-By: Claude Opus 5` trailer, so include it.
+- Commits: imperative mood, **no AI co-author trailers** — the repo's convention and the maintainer's explicit instruction.
 - Work happens on branch `ethonline-2026`, tagged baseline `pre-ethonline-2026`.
 
 ---
@@ -188,9 +188,7 @@ Expected: PASS, 10 tests.
 
 ```bash
 git add packages/intent pnpm-lock.yaml
-git commit -m "feat(intent): canonical JSON and sha256 for authorization hashing
-
-Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+git commit -m "feat(intent): canonical JSON and sha256 for authorization hashing"
 ```
 
 ---
@@ -363,9 +361,7 @@ existing construction site becomes invalid.
 
 ```bash
 git add packages/types packages/intent
-git commit -m "feat(types): AuthorizedIntent, IntentConstraints, OnchainContext, AgentPolicy
-
-Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+git commit -m "feat(types): AuthorizedIntent, IntentConstraints, OnchainContext, AgentPolicy"
 ```
 
 ---
@@ -542,9 +538,7 @@ Expected: PASS, 8 new tests.
 
 ```bash
 git add packages/intent
-git commit -m "feat(intent): freeze authorizations and detect tampering or expiry
-
-Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+git commit -m "feat(intent): freeze authorizations and detect tampering or expiry"
 ```
 
 ---
@@ -811,9 +805,7 @@ Expected: PASS, 9 new tests.
 
 ```bash
 git add packages/intent
-git commit -m "feat(intent): normalize decoded actions into a spend shape
-
-Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+git commit -m "feat(intent): normalize decoded actions into a spend shape"
 ```
 
 ---
@@ -1069,9 +1061,7 @@ confirm the recipient in the fixture is `WALLET`.
 
 ```bash
 git add packages/intent
-git commit -m "feat(intent): verify proposals against frozen constraints
-
-Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+git commit -m "feat(intent): verify proposals against frozen constraints"
 ```
 
 ---
@@ -1199,9 +1189,7 @@ Expected: every pre-existing suite still PASS.
 
 ```bash
 git add packages/intent
-git commit -m "feat(intent): derive ALLOW/REQUIRE_APPROVAL/REJECT from findings
-
-Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+git commit -m "feat(intent): derive ALLOW/REQUIRE_APPROVAL/REJECT from findings"
 ```
 
 ---
@@ -1287,9 +1275,7 @@ Expected: all PASS.
 
 ```bash
 git add apps/judge pnpm-lock.yaml
-git commit -m "feat(judge): attach agent policy when an authorization is present
-
-Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+git commit -m "feat(judge): attach agent policy when an authorization is present"
 ```
 
 ---
