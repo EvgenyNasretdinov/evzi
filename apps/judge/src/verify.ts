@@ -8,13 +8,14 @@ import type {
 } from "@intent-check/types";
 import { decode } from "@intent-check/decoder";
 import { checkIntegrity, derivePolicy, extractSpend, verifyAgainstIntent } from "@intent-check/intent";
-import { fetchOnchainContext, graphFindings } from "@intent-check/onchain-context";
+import { fetchOnchainContext, graphFindings, type DurableStore } from "@intent-check/onchain-context";
 import { isKnownProtocol } from "@intent-check/protocol-registry";
 
 export interface VerifyOptions {
   apiKey?: string;
   graphApiKey?: string;
   tokenApiJwt?: string;
+  store?: DurableStore;
 }
 
 export type VerifyOptionsLike = VerifyOptions | ((c: Context) => VerifyOptions);
@@ -117,6 +118,8 @@ export function mountVerify(app: Hono<any>, optsLike: VerifyOptionsLike) {
         wallet: call.from,
         graphApiKey: opts.graphApiKey,
         tokenApiJwt: opts.tokenApiJwt,
+        keepAlive: (p) => c.executionCtx?.waitUntil?.(p),
+        store: opts.store,
       });
       mergedOnchain = onchain;
 

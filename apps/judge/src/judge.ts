@@ -2,7 +2,7 @@ import type { Hono, Context } from "hono";
 import type { Finding, JudgeInput, JudgeVerdict, OnchainContext, UserIntent } from "@intent-check/types";
 import { applySafetyFloor } from "./safetyFloor";
 import { derivePolicy, extractSpend } from "@intent-check/intent";
-import { fetchOnchainContext, graphFindings } from "@intent-check/onchain-context";
+import { fetchOnchainContext, graphFindings, type DurableStore } from "@intent-check/onchain-context";
 import { claimedSymbolFor } from "./claimedSymbol";
 import { llmJudge } from "./anthropic";
 import { llmJudgeOpenAI } from "./openai";
@@ -26,6 +26,7 @@ export interface JudgeOptions {
   graphApiKey?: string;
   /** thegraph.market JWT for the Token API. */
   tokenApiJwt?: string;
+  store?: DurableStore;
   onchainOverride?: (a: { chainId: number; token?: string; wallet?: string }) => Promise<OnchainContext>; // for tests
 }
 
@@ -56,7 +57,11 @@ function resolveOpts(c: Context<any>, optsLike: JudgeOptionsLike): JudgeOptions 
  * caller with no credentials configured is left exactly as it was, which is why
  * every pre-existing golden fixture still holds.
  */
-async function enrichWithOnchain(input: JudgeInput, opts: JudgeOptions): Promise<JudgeInput> {
+async function enrichWithOnchain(
+  input: JudgeInput,
+  opts: JudgeOptions,
+  keepAlive?: (p: Promise<unknown>) => void,
+): Promise<JudgeInput> {
   if (input.onchain) return input;
   if (!opts.graphApiKey && !opts.tokenApiJwt && !opts.onchainOverride) return input;
 
@@ -75,6 +80,8 @@ async function enrichWithOnchain(input: JudgeInput, opts: JudgeOptions): Promise
         wallet,
         graphApiKey: opts.graphApiKey,
         tokenApiJwt: opts.tokenApiJwt,
+        keepAlive,
+        store: opts.store,
       });
 
   const extra: Finding[] = graphFindings(onchain, {
@@ -182,7 +189,7 @@ export function mountJudge(app: Hono<any>, optsLike: JudgeOptionsLike) {
     try { input = (await c.req.json()) as JudgeInput; }
     catch { return c.json({ error: "invalid_json" }, 400); }
 
-    input = await enrichWithOnchain(input, opts);
+    input = await enrichWithOnchain(input, opts, (p) => c.executionCtx?.waitUntil?.(p));
 
     if (opts.stubVerdict) {
       const v: JudgeVerdict = { tier: "SAFE", headline: stubHeadline(input), reasons: [{ severity: "info", text: "Stubbed verdict." }], confidence: 0.5 };

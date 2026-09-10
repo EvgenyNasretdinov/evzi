@@ -10,3 +10,10 @@ compatibility_flags = ["nodejs_compat"]
 #   wrangler secret put GRAPH_API_KEY
 #   wrangler secret put GRAPH_TOKEN_API_JWT
 # Local development reads the same names from apps/judge/.dev.vars.
+
+# Durable cache for slow upstreams. An in-memory cache is useless here: each
+# request can land in a fresh isolate, so a value written by one is invisible to
+# the next. The Token API takes ~10s per call, which is why it is cached at all.
+[[kv_namespaces]]
+binding = "EVZI_CACHE"
+id = "7bdae181bfdc49c7b39773ffea22817f"

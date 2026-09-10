@@ -64,3 +64,29 @@ describe("onchain-context — cache", () => {
     expect(cacheGet("k")).toBeUndefined();
   });
 });
+
+describe("onchain-context — keepAlive", () => {
+  beforeEach(() => clearCache());
+
+  it("hands the background promise to the runtime so it is not killed", async () => {
+    const kept: Promise<unknown>[] = [];
+    cachedOrKickoff("k", 1000, async () => "v", (p) => kept.push(p));
+    expect(kept).toHaveLength(1);
+    await drainInflight();
+    expect(cacheGet("k")).toBe("v");
+  });
+
+  it("does not register anything on a cache hit", async () => {
+    cachedOrKickoff("k", 1000, async () => "v");
+    await drainInflight();
+    const kept: Promise<unknown>[] = [];
+    expect(cachedOrKickoff("k", 1000, async () => "other", (p) => kept.push(p))).toBe("v");
+    expect(kept).toHaveLength(0);
+  });
+
+  it("works without a keepAlive, for plain Node callers", async () => {
+    cachedOrKickoff("k", 1000, async () => "v");
+    await drainInflight();
+    expect(cacheGet("k")).toBe("v");
+  });
+});

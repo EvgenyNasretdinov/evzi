@@ -1,7 +1,7 @@
 import type { OnchainContext } from "@intent-check/types";
 import { fetchTokenReputation } from "./subgraph";
 import { fetchTokenStats, fetchWalletBalances } from "./tokenApi";
-import { cachedOrKickoff } from "./cache";
+import { cachedOrKickoffDurable, type DurableStore } from "./cache";
 
 type TokenFacts = NonNullable<OnchainContext["token"]>;
 
@@ -36,6 +36,10 @@ export interface ContextArgs {
   tokenApiJwt?: string;
   timeoutMs?: number;
   deps?: Partial<Deps>;
+  /** Pass `c.executionCtx.waitUntil` on Workers so background enrichment survives. */
+  keepAlive?: (p: Promise<unknown>) => void;
+  /** Somewhere durable to cache slow upstreams. Workers KV in production. */
+  store?: DurableStore;
 }
 
 const DEFAULT_TIMEOUT_MS = 3000;
@@ -116,16 +120,24 @@ export async function fetchOnchainContext(args: ContextArgs): Promise<OnchainCon
   // Slow path — never awaited. Served from cache when warm, kicked off in the
   // background when cold, so the first sighting of a token costs nothing and
   // every later one is enriched.
+  const slow = { store: args.store, keepAlive: args.keepAlive };
+
   const holders =
     args.token && args.tokenApiJwt
-      ? cachedOrKickoff(`tokens:${args.chainId}:${args.token.toLowerCase()}`, SLOW_SOURCE_TTL_MS, () =>
-          d.tokenStats({ chainId: args.chainId, address: args.token!, jwt: args.tokenApiJwt! }),
+      ? await cachedOrKickoffDurable(
+          `tokens:${args.chainId}:${args.token.toLowerCase()}`,
+          SLOW_SOURCE_TTL_MS,
+          () => d.tokenStats({ chainId: args.chainId, address: args.token!, jwt: args.tokenApiJwt! }),
+          slow,
         )
       : undefined;
 
   const wallet = wantWallet
-    ? cachedOrKickoff(`balances:${args.chainId}:${args.wallet!.toLowerCase()}`, SLOW_SOURCE_TTL_MS, () =>
-        d.walletBalances({ chainId: args.chainId, address: args.wallet!, jwt: args.tokenApiJwt! }),
+    ? await cachedOrKickoffDurable(
+        `balances:${args.chainId}:${args.wallet!.toLowerCase()}`,
+        SLOW_SOURCE_TTL_MS,
+        () => d.walletBalances({ chainId: args.chainId, address: args.wallet!, jwt: args.tokenApiJwt! }),
+        slow,
       )
     : undefined;
 

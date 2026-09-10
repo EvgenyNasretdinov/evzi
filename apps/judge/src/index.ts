@@ -19,6 +19,18 @@ export interface Env {
   GRAPH_API_KEY?: string;
   /** thegraph.market JWT — authenticates the Token API. Distinct from the above. */
   GRAPH_TOKEN_API_JWT?: string;
+  /** Durable cache for slow upstreams; see wrangler.toml. */
+  EVZI_CACHE?: KVNamespace;
+}
+
+/** Adapt Workers KV to the shape packages/onchain-context expects. */
+function kvStore(kv: KVNamespace | undefined) {
+  if (!kv) return undefined;
+  return {
+    get: (key: string) => kv.get(key),
+    put: (key: string, value: string, ttlSeconds: number) =>
+      kv.put(key, value, { expirationTtl: Math.max(60, ttlSeconds) }),
+  };
 }
 
 const app = new Hono<{ Bindings: Env }>();
@@ -46,6 +58,7 @@ mountJudge(app, (c) => ({
   apiKey: c.env.JUDGE_API_KEY,
   graphApiKey: c.env.GRAPH_API_KEY,
   tokenApiJwt: c.env.GRAPH_TOKEN_API_JWT,
+  store: kvStore(c.env.EVZI_CACHE),
 }));
 
 // Agent-facing deterministic verifier. Shares the judge's api key but consults
@@ -55,6 +68,7 @@ mountVerify(app, (c) => ({
   apiKey: c.env.JUDGE_API_KEY,
   graphApiKey: c.env.GRAPH_API_KEY,
   tokenApiJwt: c.env.GRAPH_TOKEN_API_JWT,
+  store: kvStore(c.env.EVZI_CACHE),
 }));
 
 // The demo's proposer. Deterministic by design: the interesting behaviour in
