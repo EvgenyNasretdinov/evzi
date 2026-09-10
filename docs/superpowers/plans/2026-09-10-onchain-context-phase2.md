@@ -32,12 +32,20 @@
   The two chains therefore need per-chain queries and extractors, not one
   shared query. A first guessed Base id (`43Hwfi3d…`) did not exist — every
   deployment id in this plan was verified against the live gateway.
-- `api.pinax.network/v1/evm/*` — **down**: `401` without the JWT, `500 bad_gateway` with it,
-  on every path including `/v1/evm/networks`.
+- `api.pinax.network/v1/evm/*` — **working**. An earlier `500 bad_gateway` on every
+  path was a transient upstream outage, not a usage error; `/v1/evm/networks`
+  simply does not exist and answers 500 rather than 404, which made the outage
+  look total. Confirmed working: `/tokens`, `/balances`, `/holders`,
+  `/transfers`. Real USDC reports `holders: 8787430`; an unindexed address
+  returns an empty `data` array.
+- **Token API latency is ~10s per call** on the free tier, measured across all
+  four endpoints, cold and warm. Too slow to block a verdict, hence the
+  fast/slow split and the TTL cache.
+- `/v1/evm/transfers` ignores `to`/`recipient`/`receiver` and returns nothing for
+  `to_address`/`from_address`, so a spender-funnel signal is not expressible here.
 
-Consequence: `GRAPH_TOKEN_IMPERSONATION` ships now via subgraph.
-`GRAPH_SPENDER_FUNNEL` and `GRAPH_EXPOSURE_USD` are implemented against the
-Token API and stay dormant behind `degraded` until that upstream returns.
+Consequence: the subgraph is the blocking source; the Token API enriches from a
+10-minute cache. `GRAPH_SPENDER_FUNNEL` is dropped as inexpressible.
 
 ---
 

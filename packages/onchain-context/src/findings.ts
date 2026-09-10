@@ -7,57 +7,53 @@ import type { Finding, OnchainContext } from "@intent-check/types";
  */
 const BLUE_CHIPS = new Set(["USDC", "USDT", "DAI", "WETH", "WBTC"]);
 
-/** Many payers in, one payee out — the drainer funnel. */
-const FUNNEL_MIN_SENDERS = 20;
-const FUNNEL_MIN_CONCENTRATION = 0.8;
+const qty = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 2 });
 
-const usd = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
+export interface FindingOpts {
+  /** Symbol the dApp or calldata claims this token has. */
+  claimedSymbol?: string;
+  isUnlimitedApproval?: boolean;
+  /** Address of the token being approved, used to price the exposure. */
+  approvedToken?: string;
+}
 
 /**
  * Turn live Graph data into verdict findings.
  *
  * Each finding here is one the deterministic layer could not reach on its own:
- * contract verification describes code, while these describe behaviour and
- * markets. That is the whole reason live data earns its place in the pipeline.
+ * contract verification describes code, while these describe markets and
+ * holdings. That is what earns live data its place in the pipeline.
  */
-export function graphFindings(
-  ctx: OnchainContext,
-  opts: { claimedSymbol?: string; isUnlimitedApproval?: boolean },
-): Finding[] {
+export function graphFindings(ctx: OnchainContext, opts: FindingOpts): Finding[] {
   const findings: Finding[] = [];
 
   const claimed = (opts.claimedSymbol ?? ctx.token?.symbol ?? "").toUpperCase();
   if (ctx.token && !ctx.token.canonical && BLUE_CHIPS.has(claimed)) {
+    const holders = ctx.token.holders;
+    const evidence =
+      holders === undefined
+        ? "The Graph shows no real market behind this address"
+        : holders === 0
+          ? "The Graph has never seen anyone hold it"
+          : `The Graph counts only ${qty(holders)} holders of it`;
     findings.push({
       code: "GRAPH_TOKEN_IMPERSONATION",
       severity: "danger",
-      text: `This token calls itself ${claimed}, but The Graph shows no real market behind this address — the genuine ${claimed} has hundreds of millions in liquidity.`,
+      text: `This token calls itself ${claimed}, but ${evidence} — the genuine ${claimed} has millions of holders.`,
     });
   }
 
-  const s = ctx.spender;
-  if (
-    s &&
-    s.distinctInboundSenders48h >= FUNNEL_MIN_SENDERS &&
-    s.outboundConcentration >= FUNNEL_MIN_CONCENTRATION
-  ) {
-    findings.push({
-      code: "GRAPH_SPENDER_FUNNEL",
-      severity: "danger",
-      text: `${s.distinctInboundSenders48h} different wallets sent tokens to this address in the last 48 hours, and ${Math.round(
-        s.outboundConcentration * 100,
-      )}% of what left went to a single address. That is the shape of a drainer.`,
-    });
-  }
-
-  if (opts.isUnlimitedApproval && ctx.wallet?.totalUsd) {
-    findings.push({
-      code: "GRAPH_EXPOSURE_USD",
-      severity: "warn",
-      text: `An unlimited approval here would put ${usd(
-        ctx.wallet.totalUsd,
-      )} of holdings within reach.`,
-    });
+  if (opts.isUnlimitedApproval && ctx.wallet && opts.approvedToken) {
+    const held = ctx.wallet.balances.find(
+      (b) => b.token === opts.approvedToken!.toLowerCase(),
+    );
+    if (held?.quantity) {
+      findings.push({
+        code: "GRAPH_EXPOSURE",
+        severity: "warn",
+        text: `An unlimited approval here would put your entire ${qty(held.quantity)} ${held.symbol ?? "token"} balance within reach, not just the amount you are spending now.`,
+      });
+    }
   }
 
   return findings;

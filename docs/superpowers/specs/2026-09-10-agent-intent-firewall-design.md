@@ -192,18 +192,35 @@ existing tests keep their current expectations.
 
 ### `packages/onchain-context` — The Graph
 
-Base URL `https://api.pinax.network/v1/evm`, `Authorization: Bearer <JWT>`.
-The JWT is issued from a key at [thegraph.market](https://thegraph.market)
-(free tier: 100 req/s). A Graph Network gateway key is **not** accepted by
-this API — verified 2026-09-10, returns `401` regardless of header.
+Two Graph products, deliberately. The **subgraph gateway** answers in
+200–500ms and is the only source the verdict blocks on. The **Token API**
+(`api.pinax.network/v1/evm`, Bearer JWT from
+[thegraph.market](https://thegraph.market)) answers in **~10 seconds** on the
+free tier — measured 2026-09-10 across `/tokens`, `/balances`, `/holders` and
+`/transfers`, all ≈10,000ms — which is far too slow to hold a user who is
+waiting to sign. It therefore runs in the background and populates a 10-minute
+cache that enriches later checks.
+
+A Graph Network gateway key authenticates the subgraph gateway; the Token API
+needs the separate JWT, and rejects the gateway key with `401`.
 
 Three calls, three findings, each of which changes a verdict:
 
 | Function | Endpoint | Finding | Effect |
 |---|---|---|---|
-| `fetchSpenderProfile()` | `/transfers` | `GRAPH_SPENDER_FUNNEL` | CAUTION "unknown spender" → **DANGER** "412 wallets sent tokens here in 48h, all forwarded to one address" |
-| `fetchTokenReputation()` | `/tokens`, `/holders` | `GRAPH_TOKEN_IMPERSONATION` | SAFE "approve USDC" → **DANGER** "this 'USDC' has 12 holders" |
-| `fetchWalletBalances()` | `/balances` | `GRAPH_EXPOSURE_USD` | "approve MAX_UINT256" → "**puts $12,400 at risk**"; also grounds `maxSpend` caps in real holdings |
+| `fetchTokenReputation()` (subgraph, fast) | Uniswap/Messari `token` | `GRAPH_TOKEN_IMPERSONATION` | SAFE "approve USDC" → **DANGER** "this 'USDC' has no market behind it" |
+| `fetchTokenStats()` (Token API, cached) | `/tokens` | same finding, sharper | adds "…and only 12 holders; the real USDC has 8,787,430" |
+| `fetchWalletBalances()` (Token API, cached) | `/balances` | `GRAPH_EXPOSURE` | "approve MAX_UINT256" → "**would put your entire 12,400 USDC balance within reach**" |
+
+A token is treated as canonical when **either** product vouches for it, so one
+product being unavailable does not blind the check — and using two Graph
+products is itself what the composability criterion asks for.
+
+**Dropped: `GRAPH_SPENDER_FUNNEL`.** It needed transfers filtered by recipient
+across all tokens. Verified 2026-09-10 that `/v1/evm/transfers` silently
+ignores `to`, `recipient` and `receiver`, and returns nothing for
+`to_address`/`from_address` at any `age`. The query cannot be expressed on this
+tier, and a security signal that silently never fires is worse than no signal.
 
 Shape:
 
@@ -311,7 +328,7 @@ TDD on everything deterministic, matching existing repo discipline.
 
 | Risk | Mitigation |
 |---|---|
-| Graph JWT not obtained | Blocks the largest bounty. 3 clicks at thegraph.market/keys; everything before it has no external dependency. |
+| Token API latency (~10s) | Never blocks a verdict: the subgraph carries the fast path, the Token API enriches from cache. Warm the cache before recording the demo. |
 | Nano S refuses DMK/HID | Ledger is scheduled after the core. Fallback: popup-only confirmation, Ledger dropped from submission. |
 | Bazantic platform friction | Timeboxed to 4h. `/verify` has standalone value regardless. |
 | Sponsor breadth dilutes the demo | One demo path only. A sponsor that does not appear in it is not integrated. |

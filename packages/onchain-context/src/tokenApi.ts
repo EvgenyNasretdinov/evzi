@@ -5,6 +5,12 @@ const BASE = "https://api.pinax.network/v1/evm";
 /** Pinax network slugs for the chains Evzi supports. */
 const NETWORKS: Record<number, string> = { 1: "mainnet", 8453: "base" };
 
+/**
+ * A token nobody holds cannot be the blue chip it claims to be. Real USDC has
+ * ~8.8M holders; a counterfeit deployed to drain one victim has a handful.
+ */
+const HOLDERS_FLOOR = 1000;
+
 export interface TokenApiArgs {
   chainId: number;
   address: string;
@@ -13,17 +19,26 @@ export interface TokenApiArgs {
   signal?: AbortSignal;
 }
 
-interface Transfer {
-  from?: string;
-  to?: string;
-  value?: string;
+/** Shape confirmed against the live API on 2026-09-10. */
+interface TokenRow {
+  contract?: string;
+  name?: string;
+  symbol?: string;
+  decimals?: number;
+  holders?: number;
+  total_transfers?: number;
+  circulating_supply?: number;
 }
 
-interface Balance {
+/** Shape confirmed against the live API on 2026-09-10. */
+interface BalanceRow {
   contract?: string;
   symbol?: string;
+  decimals?: number;
+  /** Raw integer string. */
   amount?: string;
-  value_usd?: number;
+  /** Token quantity, i.e. amount scaled by decimals. NOT a dollar figure. */
+  value?: number;
 }
 
 /** Best-effort GET. Any failure — status, transport, shape — yields undefined. */
@@ -42,84 +57,73 @@ async function get<T>(url: string, a: TokenApiArgs): Promise<T[] | undefined> {
   }
 }
 
-const toBigInt = (v: string | undefined): bigint => {
-  try {
-    return BigInt(v ?? "0");
-  } catch {
-    return 0n;
-  }
-};
-
 /**
- * Behavioural profile of a spender address.
+ * How many people actually hold this token.
  *
- * The drainer shape is many wallets paying in and one address taking
- * everything out. Contract verification cannot see this at all — an EOA has no
- * source code to verify.
+ * Complements the subgraph's liquidity view: liquidity says a market exists,
+ * holder count says a population exists. A counterfeit fails both, and the two
+ * come from different Graph products, so one being unavailable does not blind
+ * us.
+ *
+ * Returns `undefined` when the lookup could not run at all — distinct from a
+ * definite "this token is unknown", which is `canonical: false`.
  */
-export async function fetchSpenderProfile(
+export async function fetchTokenStats(
   a: TokenApiArgs,
-): Promise<OnchainContext["spender"] | undefined> {
+): Promise<OnchainContext["token"] | undefined> {
   const net = NETWORKS[a.chainId];
   if (!net) return undefined;
 
-  const addr = a.address.toLowerCase();
-  const rows = await get<Transfer>(
-    `${BASE}/transfers?network=${net}&address=${addr}&age=2&limit=10`,
-    a,
-  );
+  const address = a.address.toLowerCase();
+  const rows = await get<TokenRow>(`${BASE}/tokens?network=${net}&contract=${address}`, a);
   if (!rows) return undefined;
 
-  const inboundSenders = new Set<string>();
-  const outboundByDest = new Map<string, bigint>();
-  let outboundTotal = 0n;
+  const row = rows[0];
+  if (!row) return { address, canonical: false };
 
-  for (const r of rows) {
-    const from = r.from?.toLowerCase();
-    const to = r.to?.toLowerCase();
-    const value = toBigInt(r.value);
-
-    if (to === addr && from && from !== addr) inboundSenders.add(from);
-    if (from === addr && to) {
-      outboundByDest.set(to, (outboundByDest.get(to) ?? 0n) + value);
-      outboundTotal += value;
-    }
-  }
-
-  const largest = [...outboundByDest.values()].reduce((m, v) => (v > m ? v : m), 0n);
-  const concentration =
-    outboundTotal > 0n ? Number((largest * 10_000n) / outboundTotal) / 10_000 : 0;
-
+  const holders = row.holders ?? 0;
   return {
-    address: addr,
-    distinctInboundSenders48h: inboundSenders.size,
-    outboundConcentration: concentration,
+    address,
+    symbol: row.symbol,
+    holders,
+    canonical: holders >= HOLDERS_FLOOR,
   };
 }
 
-/** What the wallet actually holds — turns MAX_UINT256 into a dollar figure. */
+/**
+ * What the wallet actually holds.
+ *
+ * The API reports token quantities, not dollars — there is no USD price on any
+ * endpoint available to us — so callers must phrase exposure in tokens.
+ */
 export async function fetchWalletBalances(
   a: TokenApiArgs,
 ): Promise<OnchainContext["wallet"] | undefined> {
   const net = NETWORKS[a.chainId];
   if (!net) return undefined;
 
-  const rows = await get<Balance>(
+  const rows = await get<BalanceRow>(
     `${BASE}/balances?network=${net}&address=${a.address.toLowerCase()}&limit=10`,
     a,
   );
   if (!rows) return undefined;
 
-  const balances = rows.map((b) => ({
-    token: (b.contract ?? "").toLowerCase(),
-    symbol: b.symbol,
-    amount: b.amount ?? "0",
-    usd: b.value_usd,
-  }));
-
   return {
     address: a.address.toLowerCase(),
-    totalUsd: balances.reduce((s, b) => s + (b.usd ?? 0), 0),
-    balances,
+    balances: rows.map((b) => ({
+      token: (b.contract ?? "").toLowerCase(),
+      symbol: b.symbol,
+      amount: b.amount ?? "0",
+      quantity: b.value,
+    })),
   };
 }
+
+// Deliberately absent: a spender-funnel profile.
+//
+// It would need transfers filtered by recipient across all tokens. Verified
+// 2026-09-10 that `/v1/evm/transfers` ignores `to`/`recipient`/`receiver`
+// entirely and returns nothing for `to_address`/`from_address` at any `age`, so
+// the query cannot be expressed on this tier. Shipping a guess here would mean
+// a security signal that silently never fires, which is worse than not having
+// one.

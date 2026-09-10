@@ -42,6 +42,7 @@ describe("intent — shared types", () => {
 
   it("marks a degraded on-chain context", () => {
     const ctx: OnchainContext = { degraded: true };
-    expect(ctx.spender).toBeUndefined();
+    expect(ctx.token).toBeUndefined();
+    expect(ctx.wallet).toBeUndefined();
   });
 });

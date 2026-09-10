@@ -263,25 +263,27 @@ export interface AuthorizedIntent {
  * about an EOA. Every field is optional: the upstream may be unavailable.
  */
 export interface OnchainContext {
-  spender?: {
-    address: string;
-    firstSeenDaysAgo?: number;
-    distinctInboundSenders48h: number;
-    /** 0..1 — share of outflow going to a single address. */
-    outboundConcentration: number;
-  };
   token?: {
     address: string;
     symbol?: string;
+    /** Distinct holders, from the Token API. */
     holders?: number;
+    /** Liquidity or lifetime volume standing behind the token, from subgraphs. */
     marketCapUsd?: number;
-    /** True when the protocol registry vouches for this exact address. */
+    /** True when the market shows a real population and/or real liquidity. */
     canonical: boolean;
   };
   wallet?: {
     address: string;
-    totalUsd?: number;
-    balances: { token: string; symbol?: string; amount: string; usd?: number }[];
+    balances: {
+      token: string;
+      symbol?: string;
+      /** Raw integer string. */
+      amount: string;
+      /** Token quantity (amount scaled by decimals). Not a dollar figure —
+       *  no endpoint available to us reports USD prices. */
+      quantity?: number;
+    }[];
   };
   /** True when any upstream call failed or timed out. */
   degraded: boolean;
