@@ -149,10 +149,17 @@ $("authorize").onclick = async () => {
   };
   authorization = { ...draft, hash: await sha256Hex(canonicalize(draft)) };
 
+  // A wallet is a nicety here, not a requirement: the verifier only needs an
+  // address to compare recipients against. Race the request, because a wallet
+  // whose approval popup never appears leaves the promise pending forever and
+  // would hang the page on its first click.
   if (window.ethereum) {
     try {
-      const [a] = await window.ethereum.request({ method: "eth_requestAccounts" });
-      if (a) wallet = a;
+      const accounts = await Promise.race([
+        window.ethereum.request({ method: "eth_requestAccounts" }),
+        new Promise((resolve) => setTimeout(() => resolve(null), 2500)),
+      ]);
+      if (accounts && accounts[0]) wallet = accounts[0];
     } catch { /* stay on the fallback address */ }
   }
 
