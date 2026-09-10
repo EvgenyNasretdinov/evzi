@@ -50,8 +50,8 @@ describe("eip712 — Permit2", () => {
     const r = decodeTypedData(env);
     if (r?.kind !== "permit2Transfer") throw new Error();
     expect(r.permitted).toHaveLength(1);
-    expect(r.permitted[0].address.toLowerCase()).toBe(USDC_BASE.toLowerCase());
-    expect(r.permitted[0].amount).toBe("100000000");
+    expect(r.permitted[0]?.address.toLowerCase()).toBe(USDC_BASE.toLowerCase());
+    expect(r.permitted[0]?.amount).toBe("100000000");
     expect(r.spender.toLowerCase()).toBe(DRAINER.toLowerCase());
   });
 
@@ -87,7 +87,7 @@ describe("eip712 — Permit2", () => {
     };
     const r = decodeTypedData(env);
     if (r?.kind !== "permit2Transfer") throw new Error();
-    expect(r.permitted[0].address.toLowerCase()).toBe(USDC_BASE.toLowerCase());
+    expect(r.permitted[0]?.address.toLowerCase()).toBe(USDC_BASE.toLowerCase());
   });
 });
 
