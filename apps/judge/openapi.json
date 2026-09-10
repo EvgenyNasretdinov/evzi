@@ -1,0 +1,236 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Evzi Intent Firewall",
+    "version": "1.0.0",
+    "description": "Independently verify that an AI agent's proposed on-chain actions still match the authorization a human actually gave.\n\nThe caller supplies a frozen `AuthorizedIntent` — a hashed record of what the human agreed to — plus the raw transactions an agent wants to send. Evzi decodes the calldata itself, checks it against the authorization's constraints, enriches it with live on-chain data from The Graph, and returns one of three policies:\n\n- `ALLOW` — the proposal stays inside what was authorized.\n- `REQUIRE_APPROVAL` — something needs a human to look at it.\n- `REJECT` — the proposal violates an explicit constraint, or is dangerous on its own terms.\n\nNo language model is consulted, so the same proposal always yields the same policy.",
+    "contact": { "url": "https://github.com/EvgenyNasretdinov/evzi" }
+  },
+  "servers": [{ "url": "https://intent-check-judge.workers.dev" }],
+  "security": [{ "ApiKeyAuth": [] }],
+  "paths": {
+    "/verify": {
+      "post": {
+        "operationId": "verifyProposal",
+        "summary": "Check proposed transactions against a human authorization",
+        "description": "Decodes each proposed call, verifies it against the frozen authorization's constraints (chain, token, amount cap, recipients, unlimited approvals), and adds findings from live Graph data such as a token impersonating a blue chip. Returns a policy per call and one overall policy — the strictest of them.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/VerifyRequest" },
+              "example": {
+                "authorization": {
+                  "id": "01J8",
+                  "raw": "Swap at most 500 USDC to ETH on Base, no unlimited approvals",
+                  "goal": { "kind": "swap", "summary": "swap 500 USDC for ETH on Base", "confidence": 0.9 },
+                  "constraints": {
+                    "chainIds": [8453],
+                    "maxSpend": [{ "chainId": 8453, "token": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913", "amount": "500000000" }],
+                    "allowedRecipients": [],
+                    "allowUnlimitedApproval": false
+                  },
+                  "createdAt": 1757500000000,
+                  "hash": "04a9d16518109177..."
+                },
+                "calls": [
+                  {
+                    "chainId": 8453,
+                    "from": "0x1111111111111111111111111111111111111111",
+                    "to": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+                    "data": "0x095ea7b3...ffffffff"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The verification result.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/VerifyResponse" } }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/agent/plan": {
+      "post": {
+        "operationId": "planNextStep",
+        "summary": "Get the next proposed transaction for an authorization",
+        "description": "A reference proposer used by the demo. Its first attempt requests an unlimited allowance; given the finding codes it was refused with, its next attempt narrows to the authorized cap.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/PlanRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The proposed calls and the reasoning behind them.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/PlanResponse" } }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": { "type": "apiKey", "in": "header", "name": "x-api-key" }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "The request was malformed or missing a required field.",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      },
+      "Unauthorized": {
+        "description": "Missing or incorrect api key.",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": { "error": { "type": "string" }, "message": { "type": "string" } },
+        "required": ["error"]
+      },
+      "AgentPolicy": {
+        "type": "string",
+        "enum": ["ALLOW", "REQUIRE_APPROVAL", "REJECT"],
+        "description": "What the agent may do with the proposal."
+      },
+      "Finding": {
+        "type": "object",
+        "description": "One named observation. Codes prefixed INTENT_ are constraint violations; GRAPH_ come from live on-chain data.",
+        "properties": {
+          "code": { "type": "string", "example": "INTENT_UNLIMITED_APPROVAL_FORBIDDEN" },
+          "severity": { "type": "string", "enum": ["info", "warn", "danger"] },
+          "text": { "type": "string", "description": "Plain-language explanation, safe to show a user." }
+        },
+        "required": ["code", "severity", "text"]
+      },
+      "IntentConstraints": {
+        "type": "object",
+        "properties": {
+          "chainIds": { "type": "array", "items": { "type": "integer" } },
+          "maxSpend": {
+            "type": "array",
+            "description": "Per-token spend caps. Amounts are raw integer strings.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "chainId": { "type": "integer" },
+                "token": { "type": "string" },
+                "amount": { "type": "string" }
+              },
+              "required": ["chainId", "token", "amount"]
+            }
+          },
+          "allowedRecipients": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Empty means the user's own wallet is the only acceptable recipient."
+          },
+          "allowUnlimitedApproval": { "type": "boolean" },
+          "maxSlippageBps": { "type": "integer" },
+          "allowedProtocols": { "type": "array", "items": { "type": "string" } },
+          "expiresAt": { "type": "integer" }
+        },
+        "required": ["chainIds", "maxSpend", "allowedRecipients", "allowUnlimitedApproval"]
+      },
+      "AuthorizedIntent": {
+        "type": "object",
+        "description": "A human authorization, frozen at the moment it was given. `hash` covers every other field, so any later edit is detectable.",
+        "properties": {
+          "id": { "type": "string" },
+          "raw": { "type": "string", "description": "The user's exact words." },
+          "goal": { "type": "object" },
+          "constraints": { "$ref": "#/components/schemas/IntentConstraints" },
+          "createdAt": { "type": "integer" },
+          "hash": { "type": "string", "description": "sha256 over canonical JSON of the other fields." }
+        },
+        "required": ["id", "raw", "goal", "constraints", "createdAt", "hash"]
+      },
+      "ProposedCall": {
+        "type": "object",
+        "properties": {
+          "chainId": { "type": "integer" },
+          "from": { "type": "string" },
+          "to": { "type": "string" },
+          "data": { "type": "string", "description": "Hex calldata. Decoded server-side; the caller's description of it is not trusted." },
+          "value": { "type": "string" }
+        },
+        "required": ["chainId", "from", "to", "data"]
+      },
+      "VerifyRequest": {
+        "type": "object",
+        "properties": {
+          "authorization": { "$ref": "#/components/schemas/AuthorizedIntent" },
+          "calls": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "$ref": "#/components/schemas/ProposedCall" }
+          }
+        },
+        "required": ["authorization", "calls"]
+      },
+      "VerifyResponse": {
+        "type": "object",
+        "properties": {
+          "policy": { "$ref": "#/components/schemas/AgentPolicy" },
+          "authorizationHash": { "type": "string" },
+          "findings": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Finding" },
+            "description": "Findings about the authorization itself, such as tampering or expiry."
+          },
+          "calls": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "index": { "type": "integer" },
+                "decoded": { "type": "object", "description": "What the calldata actually does." },
+                "findings": { "type": "array", "items": { "$ref": "#/components/schemas/Finding" } },
+                "policy": { "$ref": "#/components/schemas/AgentPolicy" }
+              }
+            }
+          },
+          "onchain": { "type": "object", "description": "Live Graph context used in the decision." }
+        },
+        "required": ["policy", "authorizationHash", "calls"]
+      },
+      "PlanRequest": {
+        "type": "object",
+        "properties": {
+          "authorization": { "$ref": "#/components/schemas/AuthorizedIntent" },
+          "from": { "type": "string" },
+          "feedback": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Finding" },
+            "description": "Findings from a previous rejection, so the proposer can correct itself."
+          }
+        },
+        "required": ["authorization", "from"]
+      },
+      "PlanResponse": {
+        "type": "object",
+        "properties": {
+          "attempt": { "type": "integer" },
+          "rationale": { "type": "string" },
+          "calls": { "type": "array", "items": { "$ref": "#/components/schemas/ProposedCall" } }
+        },
+        "required": ["attempt", "rationale", "calls"]
+      }
+    }
+  }
+}

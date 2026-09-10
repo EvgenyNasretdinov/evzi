@@ -3,6 +3,7 @@ import { cors } from "hono/cors";
 import { mountJudge } from "./judge";
 import { mountVerify } from "./verify";
 import { mountAgent } from "./agent";
+import openapi from "../openapi.json";
 
 export interface Env {
   ANTHROPIC_API_KEY?: string;
@@ -23,6 +24,10 @@ export interface Env {
 const app = new Hono<{ Bindings: Env }>();
 app.use("*", cors({ origin: "*", allowHeaders: ["Content-Type", "x-api-key"] }));
 app.get("/", (c) => c.text("intent-check judge ok"));
+
+// Served so an agent gateway can fetch the spec by URL rather than being
+// handed a pasted copy that drifts from the deployment.
+app.get("/openapi.json", (c) => c.json(openapi));
 
 // Mount once at module load. The handler reads env per-request via the
 // function form of options. If both keys are set, the OpenAI path wins by

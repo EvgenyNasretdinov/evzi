@@ -178,3 +178,26 @@ describe("judge — POST /verify", () => {
     expect(body.error).toBe("calls_required");
   });
 });
+
+describe("judge — OpenAPI spec", () => {
+  it("describes the routes the gateway will proxy", async () => {
+    const spec = (await import("../openapi.json")).default as any;
+    expect(Object.keys(spec.paths)).toEqual(
+      expect.arrayContaining(["/verify", "/agent/plan"]),
+    );
+  });
+
+  it("declares the api-key header the service actually enforces", async () => {
+    const spec = (await import("../openapi.json")).default as any;
+    expect(spec.components.securitySchemes.ApiKeyAuth).toMatchObject({
+      type: "apiKey",
+      in: "header",
+      name: "x-api-key",
+    });
+  });
+
+  it("marks authorization and calls as required on /verify", async () => {
+    const spec = (await import("../openapi.json")).default as any;
+    expect(spec.components.schemas.VerifyRequest.required).toEqual(["authorization", "calls"]);
+  });
+});
