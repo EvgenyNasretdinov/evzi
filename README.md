@@ -27,6 +27,12 @@ Built during ETHOnline 2026. The question above is *"does this request match
 what the dApp claims?"* — this is the harder one: **does this agent's proposed
 action still match what the human actually authorized?**
 
+The agent to worry about is not the malicious one. It is the honest one that
+read an instruction it could not tell was hostile — from a page, an email,
+another API's response — and followed it. That is not fixable with a better
+prompt: you cannot defend instructions using instructions. The check has to sit
+outside the agent's reasoning entirely.
+
 You state a goal once. Evzi freezes it into an `AuthorizedIntent` — a hashed,
 immutable record of what you agreed to, with machine-readable constraints
 (chain, token, spend cap, recipients, whether unlimited approvals are allowed

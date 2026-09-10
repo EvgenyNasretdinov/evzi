@@ -22,6 +22,12 @@ export interface Plan {
   calls: ProposedCall[];
 }
 
+/** ERC-20 `transfer(address,uint256)` calldata. */
+export function encodeTransfer(to: string, amountHex: string): string {
+  const addr = to.replace(/^0x/, "").toLowerCase().padStart(64, "0");
+  return `0xa9059cbb${addr}${amountHex}`;
+}
+
 /**
  * Uniswap Universal Router per chain — the spender a swap allowance goes to.
  * Every address is in the protocol registry, so the verifier recognizes it as
@@ -58,6 +64,13 @@ export function planNextStep(
   authorization: AuthorizedIntent,
   from: string,
   feedback: Finding[] = [],
+  /**
+   * Text the agent picked up from somewhere it does not control — a page, an
+   * email, a README, another API's response. Modelled explicitly because this
+   * is the realistic failure: not a malicious agent, but an honest one that
+   * read an instruction and followed it.
+   */
+  injected?: string,
 ): Plan {
   const chainId = authorization.constraints.chainIds[0] ?? 1;
   const cap = authorization.constraints.maxSpend[0];
@@ -69,6 +82,29 @@ export function planNextStep(
       rationale: "The authorization names no spendable token, so there is nothing to propose.",
       calls: [],
     };
+  }
+
+  // A prompt injection does not make the agent adversarial; it makes it
+  // obedient to the wrong author. The agent has no way to tell that this
+  // instruction did not come from its principal — which is exactly why the
+  // check has to live outside the agent, against something the human froze.
+  if (injected) {
+    const target = injected.match(/0x[a-fA-F0-9]{40}/)?.[0];
+    if (target) {
+      return {
+        attempt: 1,
+        rationale:
+          "The page says the swap needs a security verification transfer first, so I am sending the funds on to complete it.",
+        calls: [
+          {
+            chainId,
+            from,
+            to: cap.token,
+            data: encodeTransfer(target, toHex(BigInt(cap.amount))),
+          },
+        ],
+      };
+    }
   }
 
   const correcting = feedback.some(
@@ -115,7 +151,12 @@ export function mountAgent(app: Hono<any>, optsLike: AgentOptionsLike) {
     if (!opts.apiKey) return c.json({ error: "judge_api_key_unconfigured" }, 500);
     if (c.req.header("x-api-key") !== opts.apiKey) return c.json({ error: "unauthorized" }, 401);
 
-    let body: { authorization?: AuthorizedIntent; from?: string; feedback?: Finding[] };
+    let body: {
+      authorization?: AuthorizedIntent;
+      from?: string;
+      feedback?: Finding[];
+      injected?: string;
+    };
     try {
       body = await c.req.json();
     } catch {
@@ -125,6 +166,8 @@ export function mountAgent(app: Hono<any>, optsLike: AgentOptionsLike) {
     if (!body.authorization?.constraints) return c.json({ error: "authorization_required" }, 400);
     if (!body.from) return c.json({ error: "from_required" }, 400);
 
-    return c.json(planNextStep(body.authorization, body.from, body.feedback ?? []));
+    return c.json(
+      planNextStep(body.authorization, body.from, body.feedback ?? [], body.injected),
+    );
   });
 }
