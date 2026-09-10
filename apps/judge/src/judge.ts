@@ -1,6 +1,7 @@
 import type { Hono, Context } from "hono";
 import type { JudgeInput, JudgeVerdict, UserIntent } from "@intent-check/types";
 import { applySafetyFloor } from "./safetyFloor";
+import { derivePolicy } from "@intent-check/intent";
 import { llmJudge } from "./anthropic";
 import { llmJudgeOpenAI } from "./openai";
 import { inferIntentLLM, type InferIntentInput } from "./inferIntent";
@@ -38,6 +39,22 @@ export type JudgeOptionsLike = JudgeOptions | ((c: Context<any>) => JudgeOptions
 
 function resolveOpts(c: Context<any>, optsLike: JudgeOptionsLike): JudgeOptions {
   return typeof optsLike === "function" ? optsLike(c) : optsLike;
+}
+
+/**
+ * Apply the safety floor, then attach the agent policy.
+ *
+ * The policy is derived from the deterministic findings and the floored tier,
+ * never from the model's own judgment, and is attached only when an
+ * authorization was supplied — the human flow stays byte-identical.
+ */
+function finalize(verdict: JudgeVerdict, input: JudgeInput): JudgeVerdict {
+  const floored = applySafetyFloor(verdict, input);
+  if (!input.authorization) return floored;
+  return {
+    ...floored,
+    policy: derivePolicy(input.findings, floored.tier, { onchain: input.onchain }),
+  };
 }
 
 export function mountJudge(app: Hono<any>, optsLike: JudgeOptionsLike) {
@@ -122,7 +139,7 @@ export function mountJudge(app: Hono<any>, optsLike: JudgeOptionsLike) {
 
     if (opts.stubVerdict) {
       const v: JudgeVerdict = { tier: "SAFE", headline: stubHeadline(input), reasons: [{ severity: "info", text: "Stubbed verdict." }], confidence: 0.5 };
-      return c.json(applySafetyFloor(v, input));
+      return c.json(finalize(v, input));
     }
 
     if (!opts.anthropicApiKey && !opts.openaiApiKey && !opts.llmOverride) {
@@ -139,7 +156,7 @@ export function mountJudge(app: Hono<any>, optsLike: JudgeOptionsLike) {
         else if (provider === "anthropic") llm = await llmJudge(input, opts.anthropicApiKey!, opts.anthropicModel);
         else throw new Error("no LLM provider configured");
       }
-      return c.json(applySafetyFloor(llm, input));
+      return c.json(finalize(llm, input));
     } catch (e) {
       return c.json({ error: "llm_failed", message: String((e as Error).message ?? e) }, 502);
     }
