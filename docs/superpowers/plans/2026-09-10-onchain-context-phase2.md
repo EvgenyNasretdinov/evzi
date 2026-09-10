@@ -52,13 +52,13 @@ Token API and stay dormant behind `degraded` until that upstream returns.
 - Produces: `fetchTokenReputation(args: { chainId: number; token: string; apiKey: string; fetchImpl?: typeof fetch }): Promise<OnchainContext["token"] | undefined>`
 - Produces: `SUBGRAPH_IDS: Record<number, string>`
 
-- [ ] **Step 1: Scaffold**
+- [x] **Step 1: Scaffold**
 
 `package.json` mirrors `packages/intent/package.json` with name
 `@intent-check/onchain-context`; `tsconfig.json` is identical to the one in
 `packages/intent`. Run `pnpm install` from the root afterwards.
 
-- [ ] **Step 2: Write the failing test**
+- [x] **Step 2: Write the failing test**
 
 ```ts
 import { describe, it, expect } from "vitest";
@@ -120,12 +120,12 @@ describe("onchain-context — fetchTokenReputation", () => {
 });
 ```
 
-- [ ] **Step 3: Run and verify it fails**
+- [x] **Step 3: Run and verify it fails**
 
 Run: `pnpm --filter @intent-check/onchain-context test`
 Expected: FAIL — cannot resolve `../src/subgraph`.
 
-- [ ] **Step 4: Implement `subgraph.ts`**
+- [x] **Step 4: Implement `subgraph.ts`**
 
 ```ts
 import type { OnchainContext } from "@intent-check/types";
@@ -196,12 +196,12 @@ export async function fetchTokenReputation(
 
 `src/index.ts`: `export * from "./subgraph";`
 
-- [ ] **Step 5: Run and verify it passes**
+- [x] **Step 5: Run and verify it passes**
 
 Run: `pnpm --filter @intent-check/onchain-context test`
 Expected: PASS, 5 tests.
 
-- [ ] **Step 6: Verify against the live gateway once, by hand**
+- [x] **Step 6: Verify against the live gateway once, by hand**
 
 ```bash
 K=$(grep '^GRAPH_API_KEY=' apps/judge/.dev.vars | cut -d= -f2-)
@@ -213,7 +213,7 @@ curl -s "https://gateway.thegraph.com/api/$K/subgraphs/id/5zvR82QoaXYFyDEKLZ9t6v
 Expected: real USDC with TVL in the hundreds of millions. Confirms the
 deployment id and the field names still match.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add packages/onchain-context pnpm-lock.yaml
@@ -235,7 +235,7 @@ git commit -m "feat(onchain-context): token reputation from The Graph subgraphs"
 Written against recorded fixtures so it is complete and tested even while the
 upstream is down; it activates the moment Pinax stops returning `500`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, it, expect } from "vitest";
@@ -291,12 +291,12 @@ describe("onchain-context — fetchWalletBalances", () => {
 });
 ```
 
-- [ ] **Step 2: Run and verify it fails**
+- [x] **Step 2: Run and verify it fails**
 
 Run: `pnpm --filter @intent-check/onchain-context test`
 Expected: FAIL — cannot resolve `../src/tokenApi`.
 
-- [ ] **Step 3: Implement `tokenApi.ts`**
+- [x] **Step 3: Implement `tokenApi.ts`**
 
 ```ts
 import type { OnchainContext } from "@intent-check/types";
@@ -408,12 +408,12 @@ export async function fetchWalletBalances(
 
 Add `export * from "./tokenApi";` to `src/index.ts`.
 
-- [ ] **Step 4: Run and verify it passes**
+- [x] **Step 4: Run and verify it passes**
 
 Run: `pnpm --filter @intent-check/onchain-context test`
 Expected: PASS, 10 tests total.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/onchain-context
@@ -432,7 +432,7 @@ git commit -m "feat(onchain-context): spender profile and wallet balances via To
 - Produces: `fetchOnchainContext(args: ContextArgs): Promise<OnchainContext>` where
   `ContextArgs = { chainId: number; token?: string; spender?: string; wallet?: string; graphApiKey?: string; tokenApiJwt?: string; timeoutMs?: number; deps?: Partial<Deps> }`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, it, expect } from "vitest";
@@ -487,12 +487,12 @@ describe("onchain-context — fetchOnchainContext", () => {
 });
 ```
 
-- [ ] **Step 2: Run and verify it fails**
+- [x] **Step 2: Run and verify it fails**
 
 Run: `pnpm --filter @intent-check/onchain-context test`
 Expected: FAIL — cannot resolve `../src/context`.
 
-- [ ] **Step 3: Implement `context.ts`**
+- [x] **Step 3: Implement `context.ts`**
 
 ```ts
 import type { OnchainContext } from "@intent-check/types";
@@ -578,12 +578,12 @@ export async function fetchOnchainContext(args: ContextArgs): Promise<OnchainCon
 }
 ```
 
-- [ ] **Step 4: Run and verify it passes**
+- [x] **Step 4: Run and verify it passes**
 
 Run: `pnpm --filter @intent-check/onchain-context test`
 Expected: PASS, 15 tests total.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/onchain-context
@@ -604,7 +604,7 @@ git commit -m "feat(onchain-context): orchestrate providers with timeout and deg
 This is the step that makes the data load-bearing: each finding here is one the
 deterministic layer could not have produced on its own.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, it, expect } from "vitest";
@@ -682,12 +682,12 @@ describe("onchain-context — graphFindings", () => {
 });
 ```
 
-- [ ] **Step 2: Run and verify it fails**
+- [x] **Step 2: Run and verify it fails**
 
 Run: `pnpm --filter @intent-check/onchain-context test`
 Expected: FAIL — cannot resolve `../src/findings`.
 
-- [ ] **Step 3: Implement `findings.ts`**
+- [x] **Step 3: Implement `findings.ts`**
 
 ```ts
 import type { Finding, OnchainContext } from "@intent-check/types";
@@ -749,17 +749,17 @@ export function graphFindings(
 
 Add `export * from "./findings";` and `export * from "./context";` to `src/index.ts`.
 
-- [ ] **Step 4: Run and verify it passes**
+- [x] **Step 4: Run and verify it passes**
 
 Run: `pnpm --filter @intent-check/onchain-context test`
 Expected: PASS, 22 tests total.
 
-- [ ] **Step 5: Run the whole suite**
+- [x] **Step 5: Run the whole suite**
 
 Run: `pnpm test && pnpm typecheck`
 Expected: all green, 184 + 22 tests.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/onchain-context
