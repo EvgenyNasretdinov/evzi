@@ -202,9 +202,13 @@ Nano S cannot clear-sign calldata, so its screen shows an opaque hash. That is
 precisely why Evzi explains the transaction in the popup before the device is
 asked at all.
 
-### Uniswap — Stack Contribution (Continuity)
+### Not claimed: Uniswap
 
-See [`FEEDBACK.md`](FEEDBACK.md).
+`FEEDBACK.md` carries real developer feedback from building on the v3
+subgraphs, and the protocol registry check is load-bearing in our verifier —
+without it every legitimate swap approval reads as a transfer to a stranger.
+But the integration is a consumer's, not a contributor's, so we are not
+entering that track.
 
 ---
 
