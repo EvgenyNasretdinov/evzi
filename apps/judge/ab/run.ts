@@ -12,6 +12,12 @@
 import { buildAuthorization, CASES, WALLET, type Case } from "./fixtures";
 
 const JUDGE_URL = process.env.JUDGE_URL ?? "http://127.0.0.1:8787";
+/**
+ * When set, proposals are verified through the Bazantic gateway instead of
+ * calling the API directly. Same upstream, same logic — this measures the
+ * surface a judge would actually exercise.
+ */
+const GATEWAY_URL = process.env.BAZANTIC_GATEWAY_URL;
 const JUDGE_KEY = process.env.JUDGE_API_KEY ?? "local-dev-key";
 const OPENAI_KEY = process.env.OPENAI_API_KEY ?? "";
 const MODEL = process.env.AB_MODEL ?? "gpt-5.4";
@@ -71,14 +77,26 @@ ${JSON.stringify(verdict, null, 2)}`;
 }
 
 async function verify(auth: unknown, c: Case) {
-  const res = await fetch(`${JUDGE_URL}/verify`, {
+  // Through the gateway the api key is held by Bazantic and injected upstream,
+  // so the caller sends none — that is the whole point of the gateway.
+  const url = GATEWAY_URL ? `${GATEWAY_URL}/verify` : `${JUDGE_URL}/verify`;
+  const headers: Record<string, string> = GATEWAY_URL
+    ? { "content-type": "application/json" }
+    : { "content-type": "application/json", "x-api-key": JUDGE_KEY };
+
+  const res = await fetch(url, {
     method: "POST",
-    headers: { "content-type": "application/json", "x-api-key": JUDGE_KEY },
+    headers,
     body: JSON.stringify({
       authorization: auth,
       calls: [{ chainId: c.chainId, from: WALLET, to: c.call.to, data: c.call.data }],
     }),
   });
+  if (res.status === 402) {
+    throw new Error(
+      "gateway returned 402 Payment Required — set the per-call price to 0, or fund a wallet",
+    );
+  }
   if (!res.ok) throw new Error(`verify ${res.status}: ${(await res.text()).slice(0, 200)}`);
   const v = (await res.json()) as any;
   // Hand the agent the decision and the reasons, not our internal plumbing.
@@ -141,6 +159,7 @@ async function main() {
   console.log(`| correct decisions | ${a.correct}/${a.total} | ${b.correct}/${b.total} |`);
   console.log(
     `\nmodel: ${MODEL} · ${CASES.length} proposals × ${TRIALS} trials · ` +
+      `verifier reached ${GATEWAY_URL ? "through the Bazantic gateway" : "directly"} · ` +
       `both arms identical except the /verify result`,
   );
 }

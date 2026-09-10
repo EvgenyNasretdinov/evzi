@@ -22,11 +22,21 @@ safe, it is useless, and without them a "100% caught" number would mean nothing.
 
 ## Result
 
-| metric | raw API | with Evzi recipe |
-|---|---|---|
-| violations caught | 17/27 | **27/27** |
-| false alarms on safe proposals | 0/6 | 0/6 |
-| correct decisions | 23/33 | **33/33** |
+Run twice: once against the API directly, once with every verification going
+**through the Bazantic gateway** (which injects the API credential upstream, so
+the harness sends no key of its own).
+
+| metric | raw API | with Evzi, direct | with Evzi, via gateway |
+|---|---|---|---|
+| violations caught | 16–17/27 | **27/27** | **27/27** |
+| false alarms on safe proposals | 0/6 | 0/6 | 0/6 |
+| correct decisions | 22–23/33 | **33/33** | **33/33** |
+
+The Evzi arm scored 27/27 in both runs. The raw arm moved by one decision
+between them — the "one unit over the cap" case, which it got 2/3 the first
+time and 1/3 the second. That instability is itself part of the finding: the
+raw arm is not merely worse, it is inconsistent on exactly the cases that need
+an exact answer.
 
 ## Where the raw model failed
 
@@ -35,7 +45,7 @@ safe, it is useless, and without them a "100% caught" number would mean nothing.
 | approval above the authorized cap | 0/3 | 3/3 | The amount is a 32-byte hex word. Reading it correctly against a cap is not something to do by eye. |
 | counterfeit token claiming to be USDC | 0/3 | 3/3 | The address looks ordinary. Only live market data separates it from the real USDC. |
 | approval to an address that looks like the router | 0/3 | 3/3 | Requires knowing the canonical Universal Router address; it is not derivable from the calldata. |
-| approval one unit over the cap | 2/3 | 3/3 | Same as above, and it flipped between runs — the kind of instability a deterministic check removes. |
+| approval one unit over the cap | 2/3, then 1/3 | 3/3 | Same as above. It flipped between runs, which is the instability a deterministic check removes. |
 
 The pattern is consistent: the model is good at the cases where the danger is
 *visible in the text* — an obviously unlimited allowance, a transfer to
@@ -59,8 +69,19 @@ context.
 
 ## Reproducing
 
+Against the API directly:
+
 ```bash
 pnpm --filter @intent-check/judge dev          # judge worker on :8787
 export OPENAI_API_KEY=... JUDGE_API_KEY=local-dev-key
 pnpm --filter @intent-check/judge ab           # AB_TRIALS=3 by default
+```
+
+Through the Bazantic gateway — note that no API key is exported, because the
+gateway holds it:
+
+```bash
+export OPENAI_API_KEY=...
+export BAZANTIC_GATEWAY_URL=https://265fdbq4xnaoda4pekavdnzcje.bazgateway.com
+pnpm --filter @intent-check/judge ab
 ```

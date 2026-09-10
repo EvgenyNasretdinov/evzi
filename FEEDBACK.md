@@ -114,3 +114,75 @@ stack does not really offer:
 
 Both are small compared to what the stack already publishes, and both would be
 reused by every wallet, scanner and agent-safety tool, not just us.
+
+---
+
+# Bazantic developer feedback — ETHOnline 2026
+
+Registering the Evzi verifier as a gateway, from `baz` CLI 0.8.0 plus the web
+dashboard.
+
+## The `mcpUrl` the CLI returns is not routable
+
+`baz gateway add --json` returns:
+
+```json
+{"mcpUrl":"https://<slug>.bazgateway.com/mcp"}
+```
+
+That URL answers **404 page not found** for both GET and POST. The working
+path is `/mcp/` — with a trailing slash. So the tool's own output cannot be
+pasted into an MCP client without editing it, and there is no hint that a
+slash is what is missing. We lost time probing path shapes before trying it.
+
+**Suggestion:** return the trailing-slash form, or redirect `/mcp` → `/mcp/`.
+
+## The CLI cannot set the upstream credential, so a CLI-created gateway 404s
+
+`baz gateway add --auth-type api-key` accepts the auth *type* but there is no
+flag for the credential itself, and no `baz gateway update`. The gateway is
+created with `status: "active"`, which reads as ready — but every path returns
+404 until the credential is filled in through the dashboard and saved.
+
+Three things compounded here:
+
+1. `status: "active"` on a gateway that cannot route is misleading. Something
+   like `needs_credential` would have pointed straight at the problem.
+2. **`SEND KEY AS` defaults to `URL path`.** Our API takes its key in a header,
+   so the gateway was appending the key to the path and getting 404s from us.
+   The dashboard's own **Test connection** correctly said "Test failed", but
+   the failure reads as a URL problem rather than a key-placement one.
+3. `deployedAt` does not change until Save is pressed, and nothing on the
+   screen says the edits are unsaved. Checking `gateway list --json` was the
+   only way we found to tell whether a change had taken effect.
+
+**Suggestion:** either add `--api-key` / `--send-key-as` flags to
+`gateway add`, or have the CLI print "credential required, finish setup at
+<url>" instead of reporting a bare success.
+
+## Docs describe commands the published CLI does not have
+
+The Recipes documentation gives `baz recipe create <file>`,
+`baz recipe update` and `baz recipe publish`. Version 0.8.0 — the latest on
+npm at the time of writing — has no `recipe` command at all:
+
+```
+baz: unknown command: recipe. Try `baz --help`.
+```
+
+The session it issues does carry `recipe:read, recipe:write` scopes, so the
+capability exists server-side. Recipes appear to be web-only for now.
+
+**Suggestion:** mark the CLI recipe commands as unreleased in the docs.
+
+## What worked well
+
+- `--spec-url` fetching and parsing our OpenAPI document server-side was
+  smooth, and the generated MCP tool names came straight from our
+  `operationId`s — `verifyProposal`, `planNextStep` — which made the tool
+  listing immediately legible to an agent.
+- The x402 402 response is well formed and self-describing: scheme, network,
+  amount, asset and `payTo` all present, so a client knows exactly what it is
+  being asked to pay without out-of-band docs.
+- Per-method pricing down to zero made it possible to leave the gateway open
+  for judges to call without anyone needing a funded wallet.

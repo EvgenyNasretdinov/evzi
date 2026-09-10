@@ -110,16 +110,27 @@ consulted, so the same proposal always yields the same policy. It decodes the
 proposed calldata itself rather than trusting the caller's description of it.
 The OpenAPI spec is served from the deployment at `/openapi.json`.
 
+**Gateway:** `https://265fdbq4xnaoda4pekavdnzcje.bazgateway.com`
+(MCP at `/mcp/` — note the trailing slash) · **Bazantic account:**
+evgeny.nasretdinov@gmail.com
+
+The gateway exposes three MCP tools generated from our OpenAPI `operationId`s:
+`info`, `planNextStep` and `verifyProposal`. It holds the API credential and
+injects it upstream, so a caller sends no key of its own.
+
 The required A/B is in `apps/judge/ab/`, with the result recorded in
 [`ab/RESULTS.md`](apps/judge/ab/RESULTS.md). Eleven proposals against one
 authorization, three trials each, same model and prompt in both arms — the only
 difference is arm B receiving the `/verify` response:
 
-| metric | raw API | with Evzi |
-|---|---|---|
-| violations caught | 17/27 | **27/27** |
-| false alarms on safe proposals | 0/6 | 0/6 |
-| correct decisions | 23/33 | **33/33** |
+| metric | raw API | with Evzi, direct | via gateway |
+|---|---|---|---|
+| violations caught | 16–17/27 | **27/27** | **27/27** |
+| false alarms on safe proposals | 0/6 | 0/6 | 0/6 |
+| correct decisions | 22–23/33 | **33/33** | **33/33** |
+
+Run twice — once against the API, once with every verification going through
+the gateway. The Evzi arm scored 27/27 both times.
 
 The raw model failed exactly where the answer needs an exact decode or
 knowledge the calldata does not contain: an over-cap amount, a counterfeit
