@@ -21,6 +21,69 @@ checklist of every signal we considered:
 
 ![Evzi popup catching a fake "free NFT mint" that's actually an unlimited USDC approval](./assets/screenshots/popup-fake-mint.jpeg)
 
+## Now also: a firewall for AI agents
+
+Built during ETHOnline 2026. The question above is *"does this request match
+what the dApp claims?"* — this is the harder one: **does this agent's proposed
+action still match what the human actually authorized?**
+
+You state a goal once. Evzi freezes it into an `AuthorizedIntent` — a hashed,
+immutable record of what you agreed to, with machine-readable constraints
+(chain, token, spend cap, recipients, whether unlimited approvals are allowed
+at all). An agent then proposes transactions. Every proposal is checked back
+against that frozen authorization and reduced to one of three outcomes:
+
+```
+ALLOW              stays inside what you authorized
+REQUIRE_APPROVAL   a human needs to look at this
+REJECT             violates an explicit constraint
+```
+
+The policy is derived from deterministic findings, not from the model. A
+confident LLM verdict cannot talk the pipeline out of a rejection — there is a
+test named for exactly that.
+
+Watch it happen:
+
+```
+Agent, attempt 1:  approve(USDC, MAX_UINT256)
+                   "so I don't have to ask again on later swaps"
+Evzi:              REJECT · INTENT_UNLIMITED_APPROVAL_FORBIDDEN
+
+Agent, attempt 2:  approve(USDC, 500000000)
+                   "the verifier refused the unlimited allowance,
+                    narrowing to exactly what you authorized"
+Evzi:              ALLOW
+```
+
+The agent never sees the verifier's internals and cannot touch the
+authorization. It only reads back the finding codes it was refused with.
+
+Try it: `apps/demo-pages/agent-console.html`. The full submission write-up,
+including what is and is not finished, is in [`HACKATHON.md`](./HACKATHON.md).
+
+### What live on-chain data adds
+
+Contract verification describes *code*. A counterfeit token's code is fine —
+what gives it away is that no market exists behind it. Evzi asks The Graph:
+
+```
+real USDC (mainnet)   canonical=true    $1.03T volume, 8,787,430 holders
+counterfeit "USDC"    canonical=false   → DANGER, and the verdict says why
+```
+
+Two Graph products are used together: the subgraph gateway answers in
+200–500ms and is what the verdict waits on; the Token API answers in ~10s on
+the free tier, so it runs in the background and enriches later checks from a
+cache. A token is trusted if *either* can vouch for it.
+
+### Hardware confirmation
+
+`apps/ledger-signer` signs on a Ledger — but calls the verifier itself first,
+rather than trusting whoever asked it to sign. A compromised extension cannot
+obtain a signature for something your authorization forbids: on `REJECT` the
+device is never even asked.
+
 ## Why a checklist, not a verdict
 
 You can build a wallet that just says **DANGER, blocked**. We chose not to.
@@ -77,6 +140,8 @@ and surfaces the outcome in the popup so the user sees what happened.
 | **Origin trust** | Bundled list of 15+ canonical dApp domains; Levenshtein distance check; punycode detection. | Lookalike sites (`unisvvap.org`), IDN-homograph attacks, page-title-impersonation. |
 | **Click + form context** | Document-level click capture records the button text and the surrounding form values + section heading. | Pages that say one thing visually but trigger another in the wallet. |
 | **Deterministic findings** | A list of explicit codes: `UNLIMITED_APPROVAL`, `PERMIT2_BATCH_TRANSFER`, `SEAPORT_ZERO_PRICE_OFFER`, `LOOKALIKE_DOMAIN`, etc. | Each finding has a name and an explanation; the agent can't soften them. |
+| **Intent constraints** | Checks a proposal against the human's frozen authorization: chain, token, spend cap, recipients, unlimited approvals, expiry, and whether the authorization itself was edited after it was given. | An agent exceeding what it was actually allowed to do. |
+| **Token market reality** | Asks The Graph whether a real market and a real holder population stand behind the token. | Counterfeit tokens carrying a blue-chip symbol — invisible to contract verification, since their code is fine. |
 | **LLM judgment** | Compares stated intent against decoded action + simulation + findings. | Subtle mismatches the deterministic layer can't articulate. |
 | **Safety floor + trust ceiling** | Two-way constraint: the LLM can't soften a deterministic DANGER, and can't escalate a vetted protocol to DANGER on a hunch. | False positives on real flows; false negatives that look benign to the LLM. |
 
@@ -147,9 +212,13 @@ intent-check/
 ├── apps/
 │   ├── extension/      # MV3 Chromium extension (popup, content-script, background)
 │   ├── judge/          # Hono backend on Cloudflare Workers (or Node)
-│   └── demo-pages/     # static HTML scenarios for the hackathon demo
+│   │   └── ab/         # A/B experiment: agent with vs without the verifier
+│   ├── ledger-signer/  # hardware signing daemon, gated by the verifier
+│   └── demo-pages/     # static HTML scenarios, incl. the agent console
 ├── packages/
 │   ├── types/             # shared TypeScript types, no runtime deps
+│   ├── intent/            # frozen authorization, constraint verifier, policy
+│   ├── onchain-context/   # The Graph: subgraph + Token API providers
 │   ├── decoder/           # ERC-20, Uniswap UR, Aave v3, EIP-712 typed-data
 │   ├── protocol-registry/ # hand-curated cross-chain known-address book
 │   ├── origin-trust/      # known-dApps + Levenshtein/punycode lookalike check
@@ -234,8 +303,8 @@ Scenario picker: `http://localhost:<port>?scenario=verdict_safe`. Variants:
 
 ## Demo
 
-Two static phishing scenarios live at `apps/demo-pages/` so you can demo
-Evzi end-to-end without finding malicious sites in the wild.
+Static scenarios live at `apps/demo-pages/` so you can demo Evzi end-to-end
+without finding malicious sites in the wild.
 
 ```bash
 python3 -m http.server 8765 --directory apps/demo-pages
@@ -244,8 +313,12 @@ python3 -m http.server 8765 --directory apps/demo-pages
 
 | Scenario | What it does | Expected verdict |
 |---|---|---|
+| `agent-console.html` | An AI agent proposes an unlimited allowance, is refused, reads the finding codes and corrects itself | REJECT then ALLOW |
 | `fake-mint.html` | Pretty NFT mint page that actually calls `USDC.approve(MAX)` | DANGER · `UNLIMITED_APPROVAL` |
 | `airdrop-claim.html` | Pretty airdrop page that asks for a Permit2 batch transfer signature | DANGER · `PERMIT2_SPENDER_UNKNOWN` |
+
+The agent console talks to the judge worker, so start that first
+(`pnpm --filter @intent-check/judge dev`).
 
 Use a fresh test wallet. The pages don't actually move funds if you stop
 at the Evzi popup — but signing blindly is bad muscle memory either way.
@@ -256,8 +329,14 @@ at the Evzi popup — but signing blindly is bad muscle memory either way.
 pnpm test
 ```
 
-Roughly 100 tests across decoder, judge, origin-trust, protocol-registry,
-sourcify-client, tenderly-client, token-metadata.
+287 tests. The largest suites are judge (80), intent (59), onchain-context
+(48) and decoder (32); the rest cover origin-trust, sourcify-client,
+token-metadata, protocol-registry, tenderly-client, the extension and the
+Ledger signer.
+
+No test touches the network. The provider tests use recorded fixtures, and the
+live checks are separate scripts under `tests/live/` that are not part of the
+suite.
 
 ## Contributing
 
