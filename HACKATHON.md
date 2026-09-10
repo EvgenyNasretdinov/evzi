@@ -136,14 +136,26 @@ The required A/B is in `apps/judge/ab/`, with the result recorded in
 authorization, three trials each, same model and prompt in both arms — the only
 difference is arm B receiving the `/verify` response:
 
-| metric | raw API | with Evzi, direct | via gateway |
+| metric | no verifier | raw API | via Recipe |
 |---|---|---|---|
-| violations caught | 16–17/27 | **27/27** | **27/27** |
-| false alarms on safe proposals | 0/6 | 0/6 | 0/6 |
-| correct decisions | 22–23/33 | **33/33** | **33/33** |
+| violations caught | 18/27 | **27/27** | **27/27** |
+| false alarms on safe proposals | 0/6 | **0/6** | 2/6 |
+| correct decisions | 24/33 | **33/33** | 31/33 |
+| calls the agent built wrong | — | 0/33 | 0/33 |
 
-Run twice — once against the API, once with every verification going through
-the gateway. The Evzi arm scored 27/27 both times.
+Both tool arms construct their own request body, so an agent that edits the
+hashed authorization fails the trial — that is the failure a Recipe exists to
+prevent.
+
+**The verifier is what helps; the Recipe layer measurably did not.** `gpt-5.4`
+built a correct call 33/33 times either way, leaving the guidance nothing to
+prevent, and its instruction not to soften the policy nudged the model into two
+false alarms on benign proposals. We tested the obvious hypothesis — that a
+weaker agent would benefit — on `gpt-5-mini`, saw the same pattern rather than
+the opposite, and stopped rather than fish for a favourable configuration.
+
+A Recipe's real value here is discoverability rather than accuracy, and that is
+not something this harness can measure, so we do not claim a number for it.
 
 The raw model failed exactly where the answer needs an exact decode or
 knowledge the calldata does not contain: an over-cap amount, a counterfeit

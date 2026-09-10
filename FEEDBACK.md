@@ -137,6 +137,14 @@ slash is what is missing. We lost time probing path shapes before trying it.
 
 **Suggestion:** return the trailing-slash form, or redirect `/mcp` → `/mcp/`.
 
+## A note on the Token API incident (not a Bazantic issue)
+
+For the record, since it shaped our architecture: the Token API returned
+`500 bad_gateway` on every path for a stretch on 2026-09-10. Pinax confirmed an
+infrastructure incident that morning (status.pinax.network). Our own diagnosis
+was slowed by probing `/v1/evm/networks`, which does not exist and answers 500
+rather than 404 — so a real outage and an invalid probe looked identical.
+
 ## The CLI cannot set the upstream credential, so a CLI-created gateway 404s
 
 `baz gateway add --auth-type api-key` accepts the auth *type* but there is no
