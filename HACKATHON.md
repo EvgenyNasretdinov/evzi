@@ -110,6 +110,7 @@ consulted, so the same proposal always yields the same policy. It decodes the
 proposed calldata itself rather than trusting the caller's description of it.
 The OpenAPI spec is served from the deployment at `/openapi.json`.
 
+**Published recipe:** https://bazantic.com/recipes/on-chain-transaction-authorization-verifier
 **Gateway:** `https://265fdbq4xnaoda4pekavdnzcje.bazgateway.com`
 (MCP at `/mcp/` — note the trailing slash) · **Bazantic account:**
 evgeny.nasretdinov@gmail.com
