@@ -132,9 +132,15 @@ importers:
       '@anthropic-ai/sdk':
         specifier: ^0.30.0
         version: 0.30.1
+      '@intent-check/decoder':
+        specifier: workspace:*
+        version: link:../../packages/decoder
       '@intent-check/intent':
         specifier: workspace:*
         version: link:../../packages/intent
+      '@intent-check/onchain-context':
+        specifier: workspace:*
+        version: link:../../packages/onchain-context
       '@intent-check/types':
         specifier: workspace:*
         version: link:../../packages/types

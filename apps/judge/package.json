@@ -11,7 +11,9 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.30.0",
+    "@intent-check/decoder": "workspace:*",
     "@intent-check/intent": "workspace:*",
+    "@intent-check/onchain-context": "workspace:*",
     "@intent-check/types": "workspace:*",
     "hono": "^4.6.0"
   },

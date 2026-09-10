@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { mountJudge } from "./judge";
+import { mountVerify } from "./verify";
 
 export interface Env {
   ANTHROPIC_API_KEY?: string;
@@ -12,6 +13,10 @@ export interface Env {
   LLM_PROVIDER?: string;
   JUDGE_API_KEY: string;
   STUB_VERDICT?: string;
+  /** Graph Network gateway key — authenticates subgraph queries. */
+  GRAPH_API_KEY?: string;
+  /** thegraph.market JWT — authenticates the Token API. Distinct from the above. */
+  GRAPH_TOKEN_API_JWT?: string;
 }
 
 const app = new Hono<{ Bindings: Env }>();
@@ -33,6 +38,15 @@ mountJudge(app, (c) => ({
     : c.env.LLM_PROVIDER === "openai" ? "openai"
     : undefined,
   apiKey: c.env.JUDGE_API_KEY,
+}));
+
+// Agent-facing deterministic verifier. Shares the judge's api key but consults
+// no LLM, so its answers are reproducible — which is what makes it usable as a
+// tool other agents can call.
+mountVerify(app, (c) => ({
+  apiKey: c.env.JUDGE_API_KEY,
+  graphApiKey: c.env.GRAPH_API_KEY,
+  tokenApiJwt: c.env.GRAPH_TOKEN_API_JWT,
 }));
 
 export default app;
