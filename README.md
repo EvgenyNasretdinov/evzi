@@ -59,6 +59,8 @@ Evzi:              ALLOW
 The agent never sees the verifier's internals and cannot touch the
 authorization. It only reads back the finding codes it was refused with.
 
+The verifier is live at `https://intent-check-judge.evzi.workers.dev` (spec at `/openapi.json`).
+
 Try it: `apps/demo-pages/agent-console.html`. The full submission write-up,
 including what is and is not finished, is in [`HACKATHON.md`](./HACKATHON.md).
 

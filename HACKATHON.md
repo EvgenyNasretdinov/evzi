@@ -4,6 +4,7 @@
 **Track:** Continuity (the project existed before this event)
 **Baseline tag:** `pre-ethonline-2026` → commit `5360023`, 8 May – 10 May 2026
 **Hackathon branch:** `ethonline-2026`
+**Live verifier:** `https://intent-check-judge.evzi.workers.dev` — spec at `/openapi.json`
 
 Everything built during this event is exactly:
 
