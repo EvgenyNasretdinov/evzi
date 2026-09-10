@@ -3,5 +3,10 @@ main = "src/index.ts"
 compatibility_date = "2025-01-01"
 compatibility_flags = ["nodejs_compat"]
 
-[vars]
-JUDGE_API_KEY = "local-dev-key"
+# Secrets are NOT declared here — anything under [vars] is baked into the
+# deployed Worker and is readable by anyone with the repo. Set them with:
+#   wrangler secret put JUDGE_API_KEY
+#   wrangler secret put OPENAI_API_KEY
+#   wrangler secret put GRAPH_API_KEY
+#   wrangler secret put GRAPH_TOKEN_API_JWT
+# Local development reads the same names from apps/judge/.dev.vars.
