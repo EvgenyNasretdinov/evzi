@@ -37,7 +37,7 @@
 - Consumes: nothing.
 - Produces: `canonicalize(value: unknown): string`, `sha256Hex(input: string): Promise<string>`.
 
-- [ ] **Step 1: Create the package manifest**
+- [x] **Step 1: Create the package manifest**
 
 `packages/intent/package.json` — copied from `packages/origin-trust/package.json`, name changed:
 
@@ -76,7 +76,7 @@
 
 Then run `pnpm install` from the repo root so the workspace picks the package up.
 
-- [ ] **Step 2: Write the failing test**
+- [x] **Step 2: Write the failing test**
 
 `packages/intent/tests/canonical.test.ts`:
 
@@ -133,12 +133,12 @@ describe("intent — sha256Hex", () => {
 });
 ```
 
-- [ ] **Step 3: Run the test and verify it fails**
+- [x] **Step 3: Run the test and verify it fails**
 
 Run: `pnpm --filter @intent-check/intent test`
 Expected: FAIL — cannot resolve `../src/canonical`.
 
-- [ ] **Step 4: Implement `canonical.ts`**
+- [x] **Step 4: Implement `canonical.ts`**
 
 ```ts
 /**
@@ -179,12 +179,12 @@ export async function sha256Hex(input: string): Promise<string> {
 export * from "./canonical";
 ```
 
-- [ ] **Step 5: Run the test and verify it passes**
+- [x] **Step 5: Run the test and verify it passes**
 
 Run: `pnpm --filter @intent-check/intent test`
 Expected: PASS, 10 tests.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/intent pnpm-lock.yaml
@@ -209,7 +209,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 `packages/intent` can consume it without depending on a package that does not
 exist yet. `packages/types` stays runtime-dependency-free.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `packages/intent/tests/types.contract.test.ts` — a compile-time contract check
 plus a runtime assertion that optional fields really are optional:
@@ -261,12 +261,12 @@ describe("intent — shared types", () => {
 });
 ```
 
-- [ ] **Step 2: Run the test and verify it fails**
+- [x] **Step 2: Run the test and verify it fails**
 
 Run: `pnpm --filter @intent-check/intent test`
 Expected: FAIL — `AuthorizedIntent` is not exported from `@intent-check/types`.
 
-- [ ] **Step 3: Append the types**
+- [x] **Step 3: Append the types**
 
 Append to `packages/types/src/index.ts`:
 
@@ -348,18 +348,18 @@ In `JudgeInput`, after `netEffect`:
   onchain?: OnchainContext;
 ```
 
-- [ ] **Step 4: Run the test and verify it passes**
+- [x] **Step 4: Run the test and verify it passes**
 
 Run: `pnpm --filter @intent-check/intent test`
 Expected: PASS.
 
-- [ ] **Step 5: Verify nothing else broke**
+- [x] **Step 5: Verify nothing else broke**
 
 Run: `pnpm test && pnpm typecheck`
 Expected: all pre-existing suites PASS. Every added field is optional, so no
 existing construction site becomes invalid.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/types packages/intent
@@ -387,7 +387,7 @@ Integrity is async because Web Crypto is async; constraint checking (Task 5)
 is sync. Keeping them separate is what lets the constraint verifier stay a
 plain pure function.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `packages/intent/tests/freeze.test.ts`:
 
@@ -472,12 +472,12 @@ describe("intent — checkIntegrity", () => {
 });
 ```
 
-- [ ] **Step 2: Run the test and verify it fails**
+- [x] **Step 2: Run the test and verify it fails**
 
 Run: `pnpm --filter @intent-check/intent test`
 Expected: FAIL — cannot resolve `../src/freeze`.
 
-- [ ] **Step 3: Implement `freeze.ts`**
+- [x] **Step 3: Implement `freeze.ts`**
 
 ```ts
 import type { AuthorizedIntent, Finding } from "@intent-check/types";
@@ -533,12 +533,12 @@ export * from "./canonical";
 export * from "./freeze";
 ```
 
-- [ ] **Step 4: Run the test and verify it passes**
+- [x] **Step 4: Run the test and verify it passes**
 
 Run: `pnpm --filter @intent-check/intent test`
 Expected: PASS, 8 new tests.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/intent
@@ -566,7 +566,7 @@ One normalizing layer so the constraint verifier does not carry a nine-armed
 switch. `swapIn` is the token leaving the wallet in a swap; the token arriving
 is not a spend and is deliberately not modelled.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `packages/intent/tests/spend.test.ts`:
 
@@ -662,12 +662,12 @@ describe("intent — extractSpend", () => {
 });
 ```
 
-- [ ] **Step 2: Run the test and verify it fails**
+- [x] **Step 2: Run the test and verify it fails**
 
 Run: `pnpm --filter @intent-check/intent test`
 Expected: FAIL — cannot resolve `../src/spend`.
 
-- [ ] **Step 3: Implement `spend.ts`**
+- [x] **Step 3: Implement `spend.ts`**
 
 ```ts
 import type { DecodedAction } from "@intent-check/types";
@@ -802,12 +802,12 @@ export function extractSpend(decoded: DecodedAction, chainId: number): SpendShap
 
 Update `packages/intent/src/index.ts` to also `export * from "./spend";`.
 
-- [ ] **Step 4: Run the test and verify it passes**
+- [x] **Step 4: Run the test and verify it passes**
 
 Run: `pnpm --filter @intent-check/intent test`
 Expected: PASS, 9 new tests.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/intent
@@ -833,7 +833,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 Sync and pure. `wallet` is required because "no explicit recipients" means
 "the user's own wallet", which cannot be evaluated without knowing it.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `packages/intent/tests/verify.test.ts`:
 
@@ -965,12 +965,12 @@ describe("intent — verifyAgainstIntent", () => {
 });
 ```
 
-- [ ] **Step 2: Run the test and verify it fails**
+- [x] **Step 2: Run the test and verify it fails**
 
 Run: `pnpm --filter @intent-check/intent test`
 Expected: FAIL — cannot resolve `../src/verify`.
 
-- [ ] **Step 3: Implement `verify.ts`**
+- [x] **Step 3: Implement `verify.ts`**
 
 ```ts
 import type {
@@ -1058,14 +1058,14 @@ export function verifyAgainstIntent(
 }
 ```
 
-- [ ] **Step 4: Run the test and verify it passes**
+- [x] **Step 4: Run the test and verify it passes**
 
 Run: `pnpm --filter @intent-check/intent test`
 Expected: PASS, 11 new tests. If the "clean swap" case fails because the
 router is the recipient, that is the `swapIn` carve-out doing its job —
 confirm the recipient in the fixture is `WALLET`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/intent
@@ -1090,7 +1090,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 Pure, total, and deliberately unreachable from the LLM — the same property the
 existing safety floor has.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `packages/intent/tests/policy.test.ts`:
 
@@ -1150,12 +1150,12 @@ describe("intent — derivePolicy", () => {
 });
 ```
 
-- [ ] **Step 2: Run the test and verify it fails**
+- [x] **Step 2: Run the test and verify it fails**
 
 Run: `pnpm --filter @intent-check/intent test`
 Expected: FAIL — cannot resolve `../src/policy`.
 
-- [ ] **Step 3: Implement `policy.ts`**
+- [x] **Step 3: Implement `policy.ts`**
 
 ```ts
 import type { AgentPolicy, Finding, OnchainContext, VerdictTier } from "@intent-check/types";
@@ -1185,17 +1185,17 @@ export function derivePolicy(
 }
 ```
 
-- [ ] **Step 4: Run the test and verify it passes**
+- [x] **Step 4: Run the test and verify it passes**
 
 Run: `pnpm --filter @intent-check/intent test`
 Expected: PASS, 10 new tests.
 
-- [ ] **Step 5: Run the whole suite**
+- [x] **Step 5: Run the whole suite**
 
 Run: `pnpm test && pnpm typecheck`
 Expected: every pre-existing suite still PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/intent
@@ -1217,7 +1217,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 - Consumes: `derivePolicy` (Task 6), existing `applySafetyFloor`.
 - Produces: `/judge` responses carrying `policy` whenever `JudgeInput.authorization` is present.
 
-- [ ] **Step 1: Add the workspace dependency**
+- [x] **Step 1: Add the workspace dependency**
 
 In `apps/judge/package.json`, add to `dependencies` (create the block if absent):
 
@@ -1227,7 +1227,7 @@ In `apps/judge/package.json`, add to `dependencies` (create the block if absent)
 
 Run `pnpm install` from the repo root.
 
-- [ ] **Step 2: Write the failing test**
+- [x] **Step 2: Write the failing test**
 
 `apps/judge/tests/policy.integration.test.ts`:
 
@@ -1246,12 +1246,12 @@ describe("judge — policy attachment", () => {
 });
 ```
 
-- [ ] **Step 3: Run the test and verify it fails**
+- [x] **Step 3: Run the test and verify it fails**
 
 Run: `pnpm --filter @intent-check/judge test`
 Expected: FAIL — cannot resolve `@intent-check/intent`.
 
-- [ ] **Step 4: Attach the policy in `judge.ts`**
+- [x] **Step 4: Attach the policy in `judge.ts`**
 
 Locate where the handler returns the verdict after `applySafetyFloor`. Add
 the import at the top:
@@ -1272,18 +1272,18 @@ const withPolicy = input.authorization
 return withPolicy;
 ```
 
-- [ ] **Step 5: Run the tests and verify they pass**
+- [x] **Step 5: Run the tests and verify they pass**
 
 Run: `pnpm --filter @intent-check/judge test`
 Expected: PASS, including every pre-existing judge test — the human path
 produces no `policy` field and its golden fixtures are unchanged.
 
-- [ ] **Step 6: Run the full suite**
+- [x] **Step 6: Run the full suite**
 
 Run: `pnpm test && pnpm typecheck`
 Expected: all PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add apps/judge pnpm-lock.yaml
