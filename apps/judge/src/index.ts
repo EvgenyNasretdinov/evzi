@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { mountJudge } from "./judge";
 import { mountVerify } from "./verify";
+import { mountAgent } from "./agent";
 
 export interface Env {
   ANTHROPIC_API_KEY?: string;
@@ -50,5 +51,9 @@ mountVerify(app, (c) => ({
   graphApiKey: c.env.GRAPH_API_KEY,
   tokenApiJwt: c.env.GRAPH_TOKEN_API_JWT,
 }));
+
+// The demo's proposer. Deterministic by design: the interesting behaviour in
+// this system belongs to the verifier, not the agent being verified.
+mountAgent(app, (c) => ({ apiKey: c.env.JUDGE_API_KEY }));
 
 export default app;

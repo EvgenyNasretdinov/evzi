@@ -156,3 +156,43 @@ describe("intent — verifyAgainstIntent", () => {
     expect(found).toContain("INTENT_TOKEN_MISMATCH");
   });
 });
+
+describe("intent — approving a vetted protocol", () => {
+  const ROUTER = "0x2626664c2603336e57b271c5c0b26f421741e481";
+  const withRegistry: VerifyContext = {
+    ...ctx,
+    isKnownSpender: (a) => a === ROUTER,
+  };
+
+  it("does not treat an allowance to a vetted router as a drain", () => {
+    const decoded: DecodedAction = {
+      kind: "approve", token: USDC, spender: ROUTER, amount: "500000000", isUnlimited: false,
+    };
+    expect(codes(verifyAgainstIntent(intent, decoded, withRegistry))).toEqual([]);
+  });
+
+  it("still rejects an unlimited allowance to that same vetted router", () => {
+    const decoded: DecodedAction = {
+      kind: "approve", token: USDC, spender: ROUTER, amount: MAX_UINT256, isUnlimited: true,
+    };
+    expect(codes(verifyAgainstIntent(intent, decoded, withRegistry))).toContain(
+      "INTENT_UNLIMITED_APPROVAL_FORBIDDEN",
+    );
+  });
+
+  it("still rejects an allowance to an address the registry does not know", () => {
+    const decoded: DecodedAction = {
+      kind: "approve", token: USDC, spender: "0xdead", amount: "1", isUnlimited: false,
+    };
+    expect(codes(verifyAgainstIntent(intent, decoded, withRegistry))).toContain(
+      "INTENT_RECIPIENT_NOT_ALLOWED",
+    );
+  });
+
+  it("still rejects a plain transfer to a vetted protocol, which is not an allowance", () => {
+    const decoded: DecodedAction = { kind: "transfer", token: USDC, to: ROUTER, amount: "1" };
+    expect(codes(verifyAgainstIntent(intent, decoded, withRegistry))).toContain(
+      "INTENT_RECIPIENT_NOT_ALLOWED",
+    );
+  });
+});

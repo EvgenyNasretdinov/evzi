@@ -13,6 +13,12 @@ export interface VerifyContext {
   wallet: string;
   onchain?: OnchainContext;
   sim?: SimResult;
+  /**
+   * Whether an address is a vetted protocol. Injected by the caller so this
+   * package keeps depending only on types. Approving a router is how swaps
+   * work; without this, every legitimate swap approval reads as a drain.
+   */
+  isKnownSpender?: (address: string) => boolean;
 }
 
 const danger = (code: string, text: string): Finding => ({ code, severity: "danger", text });
@@ -91,7 +97,11 @@ export function verifyAgainstIntent(
     const to = m.recipient;
     const isThirdParty = to !== undefined && to !== wallet && !allowed.has(to);
     const routerLegOk = allowed.size === 0 && m.kind === "swapIn";
-    if (isThirdParty && !routerLegOk) {
+    // Granting an allowance to a vetted protocol is not a transfer to a
+    // stranger; the amount and unlimited checks above are what police it.
+    const vettedSpender =
+      m.kind === "approve" && to !== undefined && (ctx.isKnownSpender?.(to) ?? false);
+    if (isThirdParty && !routerLegOk && !vettedSpender) {
       findings.push(
         danger(
           "INTENT_RECIPIENT_NOT_ALLOWED",

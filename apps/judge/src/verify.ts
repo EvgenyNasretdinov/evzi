@@ -9,6 +9,7 @@ import type {
 import { decode } from "@intent-check/decoder";
 import { checkIntegrity, derivePolicy, extractSpend, verifyAgainstIntent } from "@intent-check/intent";
 import { fetchOnchainContext, graphFindings } from "@intent-check/onchain-context";
+import { isKnownProtocol } from "@intent-check/protocol-registry";
 
 export interface VerifyOptions {
   apiKey?: string;
@@ -124,6 +125,7 @@ export function mountVerify(app: Hono<any>, optsLike: VerifyOptionsLike) {
           chainId: call.chainId,
           wallet: call.from,
           onchain,
+          isKnownSpender: (a) => isKnownProtocol(call.chainId, a),
         }),
         ...graphFindings(onchain, {
           claimedSymbol: onchain.token?.symbol,

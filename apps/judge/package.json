@@ -14,6 +14,7 @@
     "@intent-check/decoder": "workspace:*",
     "@intent-check/intent": "workspace:*",
     "@intent-check/onchain-context": "workspace:*",
+    "@intent-check/protocol-registry": "workspace:*",
     "@intent-check/types": "workspace:*",
     "hono": "^4.6.0"
   },
