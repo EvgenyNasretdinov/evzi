@@ -176,6 +176,10 @@ export interface JudgeInput {
   // Net token deltas for the user's wallet, derived from sim.assetChanges.
   // Positive amounts = received; negative = sent. Empty when sim is absent.
   netEffect?: { wallet: string; deltas: NetDelta[] };
+  /** The frozen human authorization an agent is acting under, when there is one. */
+  authorization?: AuthorizedIntent;
+  /** Live on-chain behavioural context, when available. */
+  onchain?: OnchainContext;
 }
 
 export interface NetDelta {
@@ -192,6 +196,9 @@ export interface JudgeVerdict {
   headline: string;
   reasons: { severity: Severity; text: string }[];
   confidence: number;
+  /** Present when an AuthorizedIntent was supplied. Binding in agent mode,
+   *  advisory in the human flow. Derived deterministically — never by the LLM. */
+  policy?: AgentPolicy;
 }
 
 // Tier ordering helper.
@@ -214,3 +221,71 @@ export function isExactMatch(m: ContractMeta["matchType"]): boolean {
 export function isPartialMatch(m: ContractMeta["matchType"]): boolean {
   return m === "match" || m === "partial";
 }
+
+// ---------------------------------------------------------------------------
+// Agent intent firewall (ETHOnline 2026).
+//
+// These describe an AI agent acting on a human's behalf: the human authorizes
+// a goal once, the agent proposes transactions, and every proposal is checked
+// back against that frozen authorization.
+// ---------------------------------------------------------------------------
+
+/** Machine-readable limits the human agreed to, parsed from their own words. */
+export interface IntentConstraints {
+  chainIds: number[];
+  /** Per-token spend caps. Raw integer strings, same convention as TokenAmount. */
+  maxSpend: { chainId: number; token: string; amount: string }[];
+  /** Empty means: the user's own wallet is the only acceptable recipient. */
+  allowedRecipients: string[];
+  allowUnlimitedApproval: boolean;
+  maxSlippageBps?: number;
+  allowedProtocols?: string[];
+  expiresAt?: number;
+}
+
+/**
+ * A human authorization, frozen at confirmation time. `hash` covers every
+ * other field via canonical JSON, so any later mutation is detectable.
+ */
+export interface AuthorizedIntent {
+  id: string;
+  /** The user's exact words. Kept verbatim so the verdict can quote them. */
+  raw: string;
+  goal: UserIntent;
+  constraints: IntentConstraints;
+  createdAt: number;
+  hash: string;
+}
+
+/**
+ * Live behavioural data from The Graph. Contract verification tells us about
+ * code; this tells us about behaviour, which is the only way to say anything
+ * about an EOA. Every field is optional: the upstream may be unavailable.
+ */
+export interface OnchainContext {
+  spender?: {
+    address: string;
+    firstSeenDaysAgo?: number;
+    distinctInboundSenders48h: number;
+    /** 0..1 — share of outflow going to a single address. */
+    outboundConcentration: number;
+  };
+  token?: {
+    address: string;
+    symbol?: string;
+    holders?: number;
+    marketCapUsd?: number;
+    /** True when the protocol registry vouches for this exact address. */
+    canonical: boolean;
+  };
+  wallet?: {
+    address: string;
+    totalUsd?: number;
+    balances: { token: string; symbol?: string; amount: string; usd?: number }[];
+  };
+  /** True when any upstream call failed or timed out. */
+  degraded: boolean;
+}
+
+/** What an agent is permitted to do with a proposal. */
+export type AgentPolicy = "ALLOW" | "REQUIRE_APPROVAL" | "REJECT";
