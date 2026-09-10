@@ -8,7 +8,8 @@
     "probe": "tsx src/probe.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "whichapp": "tsx src/whichapp.ts"
+    "whichapp": "tsx src/whichapp.ts",
+    "verify-sig": "tsx src/verify-sig.ts"
   },
   "dependencies": {
     "@intent-check/types": "workspace:*",

@@ -58,3 +58,26 @@ Checklist when it will not connect, in the order that actually catches things:
 advanced clear-signing. Plain transaction signing through the Ethereum app is
 what this supports, which is why Evzi explains the transaction in the popup
 before the device is ever asked.
+
+## Verifying a signature is real
+
+```bash
+pnpm --filter @intent-check/ledger-signer exec tsx src/verify-sig.ts \
+  request.json response.json 0xYourDeviceAddress
+```
+
+Bytes coming back from a device prove only that something answered. This
+re-serializes the exact transaction that was sent, recovers the signer address
+from the returned `r`/`s`/`v`, and checks it against the address the device
+reports at the same derivation path.
+
+## Blind signing
+
+Any contract call — an ERC-20 `approve` included — requires **Blind signing**
+to be enabled in the Ethereum app's settings on the device. A Nano S cannot
+clear-sign calldata, so the screen shows an opaque hash rather than a readable
+action. Without it the app answers `EthAppCommandError: Invalid data`.
+
+That limitation is the argument for Evzi rather than against it: the device can
+only ask "sign this hash?", so the transaction has to be explained somewhere
+else, before the device is ever contacted.

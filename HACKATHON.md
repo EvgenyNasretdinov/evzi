@@ -150,8 +150,33 @@ no Key Ring app and no advanced clear-signing. Plain transaction signing
 through the Ethereum app is what this supports, and the popup explains the
 transaction before the device is ever asked.
 
-**Status: the policy gate is covered by 10 tests against a faked device; an
-end-to-end signature on real hardware is not yet demonstrated.**
+**Verified end to end on a physical Nano S**, against the deployed verifier —
+not a mock on either side:
+
+```
+ioreg                   Nano S present, USB Vendor Name = "Ledger"
+whichapp → getAddress   0xd55deD742Af04444846cc3B52C6d56abe2F954f3
+POST /sign  unlimited   403 rejected_by_policy · INTENT_UNLIMITED_APPROVAL_FORBIDDEN
+                        "the device was never asked" — nothing appeared on its screen
+POST /sign  500 USDC    200 ALLOW · signature returned
+recover address         0xd55deD742Af04444846cc3B52C6d56abe2F954f3  ✓ matches
+```
+
+The recovery step matters: bytes coming back from a device prove only that
+something answered. Recovering the signer address from the signature over the
+exact serialized transaction proves the key at our derivation path signed the
+thing we asked it to sign. `pnpm --filter @intent-check/ledger-signer exec tsx
+src/verify-sig.ts` does it.
+
+The refusal case is the one worth dwelling on. A caller that has been
+compromised cannot even *show the human a prompt* for something the
+authorization forbids — the device is never contacted, so there is no tap to
+fool anyone into making.
+
+**Blind signing is required** for any contract call, `approve` included: a
+Nano S cannot clear-sign calldata, so its screen shows an opaque hash. That is
+precisely why Evzi explains the transaction in the popup before the device is
+asked at all.
 
 ### Uniswap — Stack Contribution (Continuity)
 
@@ -185,9 +210,6 @@ Everything: `pnpm test && pnpm typecheck`.
 
 ## What is honestly not done
 
-- **No hardware signature has been produced yet.** The daemon and its policy
-  gate are written and tested; the device was not reachable over USB during
-  development.
 - **The agent proposer is scripted, not an LLM.** Deliberate — the interesting
   behaviour belongs to the verifier, and a deterministic proposer keeps the
   demo and the A/B reproducible — but it is not a language-model agent, and the
