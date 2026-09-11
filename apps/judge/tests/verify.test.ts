@@ -73,7 +73,11 @@ describe("judge — POST /verify", () => {
         },
       ],
     });
-    expect(body.policy).toBe("ALLOW");
+    // Unsigned: the constraints are satisfied, but nothing proves the
+    // authorization came from the wallet rather than from the agent, so it
+    // needs a human rather than sailing through.
+    expect(body.policy).toBe("REQUIRE_APPROVAL");
+    expect(body.findings.map((f: any) => f.code)).toContain("INTENT_UNSIGNED");
     expect(body.calls[0].findings).toEqual([]);
   });
 
@@ -105,7 +109,7 @@ describe("judge — POST /verify", () => {
         { chainId: 8453, from: WALLET, to: USDC, data: approveCalldata(DRAINER, MAX_HEX) },
       ],
     });
-    expect(body.calls[0].policy).toBe("ALLOW");
+    expect(body.calls[0].policy).toBe("REQUIRE_APPROVAL");
     expect(body.calls[1].policy).toBe("REJECT");
     expect(body.policy).toBe("REJECT");
   });
@@ -176,6 +180,68 @@ describe("judge — POST /verify", () => {
     const { status, body } = await verify({ authorization: await authorization() });
     expect(status).toBe(400);
     expect(body.error).toBe("calls_required");
+  });
+});
+
+describe("judge — signed authorizations", () => {
+  const KEY = "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d";
+
+  async function signedAuthorization() {
+    const { privateKeyToAccount } = await import("viem/accounts");
+    const { authorizationMessage } = await import("@intent-check/intent");
+    const account = privateKeyToAccount(KEY as `0x${string}`);
+    const frozen = await authorization();
+    const withSigner = { ...frozen, signer: account.address };
+    const signature = await account.signMessage({
+      message: authorizationMessage(withSigner as any),
+    });
+    // The address is returned alongside, never inside: any extra field on the
+    // object becomes part of what gets re-hashed and would read as tampering.
+    return { auth: { ...withSigner, signature }, address: account.address };
+  }
+
+  const compliant = (from: string) => ({
+    chainId: 8453,
+    from,
+    to: USDC,
+    data: approveCalldata(from, amount(500_000_000n)),
+  });
+
+  it("allows a compliant proposal when the authorization is properly signed", async () => {
+    const { auth, address } = await signedAuthorization();
+    const { body } = await verify({ authorization: auth, calls: [compliant(address)] });
+    expect(body.findings).toEqual([]);
+    expect(body.policy).toBe("ALLOW");
+  });
+
+  it("rejects a signature that does not belong to the declared signer", async () => {
+    const { auth } = await signedAuthorization();
+    const forged = { ...auth, signer: "0x1111111111111111111111111111111111111111" };
+    const { body } = await verify({ authorization: forged, calls: [compliant(forged.signer)] });
+    expect(body.findings.map((f: any) => f.code)).toContain("INTENT_SIGNATURE_INVALID");
+    expect(body.policy).toBe("REJECT");
+  });
+
+  it("rejects an authorization signed by a wallet other than the one spending", async () => {
+    const { auth } = await signedAuthorization();
+    const { body } = await verify({
+      authorization: auth,
+      calls: [compliant("0x2222222222222222222222222222222222222222")],
+    });
+    expect(body.findings.map((f: any) => f.code)).toContain("INTENT_SIGNER_MISMATCH");
+    expect(body.policy).toBe("REJECT");
+  });
+
+  it("still catches a constraint edit even when the old signature is carried along", async () => {
+    const { auth, address } = await signedAuthorization();
+    const tampered = {
+      ...auth,
+      constraints: { ...auth.constraints, allowUnlimitedApproval: true },
+    };
+    const { body } = await verify({ authorization: tampered, calls: [compliant(address)] });
+    const codes = body.findings.map((f: any) => f.code);
+    expect(codes).toContain("INTENT_TAMPERED");
+    expect(body.policy).toBe("REJECT");
   });
 });
 

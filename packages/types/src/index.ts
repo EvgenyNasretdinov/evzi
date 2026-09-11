@@ -255,6 +255,17 @@ export interface AuthorizedIntent {
   constraints: IntentConstraints;
   createdAt: number;
   hash: string;
+  /**
+   * The wallet that signed this authorization — the one whose funds it governs.
+   *
+   * The hash alone only catches careless tampering: it is computed over public
+   * data with no secret, so anyone who edits a constraint can recompute it. A
+   * signature cannot be recomputed without the key, and the key is the one
+   * thing an agent does not have.
+   */
+  signer?: string;
+  /** EIP-191 signature over `authorizationMessage(intent)`. */
+  signature?: string;
 }
 
 /**

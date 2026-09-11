@@ -146,6 +146,72 @@ const WALLET_FALLBACK = "0x1111111111111111111111111111111111111111";
 const ACCENT = { blue: "#74CAFF", yellow: "#FFCD69", green: "#4ACDAA", red: "#F77579" };
 const POLICY_STATUS = { ALLOW: "green", REQUIRE_APPROVAL: "yellow", REJECT: "red" };
 
+/**
+ * How this page proves an authorization came from the wallet.
+ *
+ * A hash only catches careless tampering — it is computed over public data, so
+ * anyone who edits a constraint can recompute it. A signature cannot be
+ * recomputed without the key, and the key is the one thing an agent does not
+ * have. So the wallet that will spend signs the authorization, and the verifier
+ * recovers that address and checks it matches.
+ *
+ * Three ways to get a signer, in descending order of realism:
+ *   1. a real wallet in the browser,
+ *   2. an ephemeral key generated here, so the demo works with no wallet,
+ *   3. nothing — the page still runs and the verifier says INTENT_UNSIGNED,
+ *      which is itself worth seeing.
+ */
+let signWith = null;
+
+/**
+ * The key that signs the authorization.
+ *
+ * A hash only catches careless tampering — it is computed over public data, so
+ * anyone who edits a constraint can recompute it. A signature cannot be
+ * recomputed without the key, and the key is the one thing an agent does not
+ * have. So the wallet that will spend signs, and the verifier recovers that
+ * address and checks it matches.
+ *
+ * This demo generates its own key rather than driving a browser wallet. A
+ * wallet whose popup does not appear leaves the promise pending forever, which
+ * is a poor thing to discover mid-recording — and the mechanism being shown is
+ * the signature, not which keystore holds it. `vendor/signer.js` is viem's
+ * account module bundled locally, so nothing here needs the network.
+ */
+const signerReady = import("./vendor/signer.js")
+  .then((m) => m.privateKeyToAccount(m.generatePrivateKey()))
+  .catch(() => null);
+
+async function ensureSigner() {
+  if (signWith) return signWith;
+  const account = await signerReady;
+  if (!account) return null;
+  signWith = {
+    address: account.address,
+    kind: "demo key",
+    sign: (message) => account.signMessage({ message }),
+  };
+  return signWith;
+}
+
+/** Must match authorizationMessage() in packages/intent exactly. */
+function authorizationMessage(intent) {
+  const c = intent.constraints;
+  return [
+    "Evzi authorization",
+    "",
+    intent.raw,
+    "",
+    `chains: ${c.chainIds.join(", ")}`,
+    ...c.maxSpend.map((m) => `  at most ${m.amount} of ${m.token} on chain ${m.chainId}`),
+    `recipients: ${c.allowedRecipients.length ? c.allowedRecipients.join(", ") : "my own wallet only"}`,
+    `unlimited approvals: ${c.allowUnlimitedApproval ? "allowed" : "forbidden"}`,
+    c.expiresAt ? `expires: ${new Date(c.expiresAt).toISOString()}` : "expires: never",
+    "",
+    `hash: ${intent.hash}`,
+  ].join("\n");
+}
+
 const $ = (id) => document.getElementById(id);
 const feed = $("feed");
 let authorization = null;
@@ -263,21 +329,23 @@ $("authorize").onclick = async () => {
   };
   authorization = { ...draft, hash: await sha256Hex(canonicalize(draft)) };
 
-  // A wallet is a nicety here, not a requirement: the verifier only needs an
-  // address to compare recipients against. Race the request, because a wallet
-  // whose approval popup never appears leaves the promise pending forever and
-  // would hang the page on its first click.
-  if (window.ethereum) {
+  const signer = await ensureSigner();
+  let signedBy = "unsigned";
+  if (signer) {
+    wallet = signer.address;
+    const withSigner = { ...authorization, signer: signer.address };
     try {
-      const accounts = await Promise.race([
-        window.ethereum.request({ method: "eth_requestAccounts" }),
-        new Promise((resolve) => setTimeout(() => resolve(null), 2500)),
-      ]);
-      if (accounts && accounts[0]) wallet = accounts[0];
-    } catch { /* stay on the fallback address */ }
+      authorization = {
+        ...withSigner,
+        signature: await signer.sign(authorizationMessage(withSigner)),
+      };
+      signedBy = "signed";
+    } catch {
+      authorization = withSigner;
+    }
   }
 
-  $("authHash").textContent = `authorization #${authorization.hash.slice(0, 6)}`;
+  $("authHash").textContent = `authorization #${authorization.hash.slice(0, 6)} · ${signedBy}`;
   $("run").disabled = false;
   $("inject").disabled = false;
   setStatus("blue");
@@ -285,7 +353,8 @@ $("authorize").onclick = async () => {
     `<div class="head"><span class="who">You</span></div>` +
     `<div class="said">Authorized: <code>${raw}</code></div>` +
     `<div class="meta">cap ${constraints.maxSpend[0].amount} units · chain ${constraints.chainIds[0]} · ` +
-    `unlimited approvals ${constraints.allowUnlimitedApproval ? "allowed" : "forbidden"}</div>`);
+    `unlimited approvals ${constraints.allowUnlimitedApproval ? "allowed" : "forbidden"}` +
+    (authorization.signer ? ` · signed by ${authorization.signer.slice(0, 10)}…` : "") + `</div>`);
 };
 
 $("reset").onclick = () => {

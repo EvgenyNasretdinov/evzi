@@ -51,7 +51,17 @@ and is refused, because the human never authorized a recipient other than their
 own wallet.
 
 The human states a goal once. Evzi freezes it into an `AuthorizedIntent` — a
-hashed, immutable object carrying machine-readable constraints. An agent then
+hashed object carrying machine-readable constraints, **signed by the wallet
+whose funds it governs**.
+
+The signature is what makes it hold. A hash alone catches only careless
+tampering: it is computed over public data, so anyone who edits a constraint
+can recompute it. A signature cannot be recomputed without the key, and the key
+is the one thing an agent does not have. The verifier recovers the signer from
+the signature and refuses if it is not the wallet doing the spending —
+`INTENT_SIGNATURE_INVALID` and `INTENT_SIGNER_MISMATCH`. An unsigned
+authorization is not rejected outright but never passes silently either; it
+comes back `REQUIRE_APPROVAL` with `INTENT_UNSIGNED`. An agent then
 proposes transactions. Every proposal is checked against that frozen
 authorization, against live on-chain data from The Graph, and against the
 existing deterministic checks, producing a policy: `ALLOW` /

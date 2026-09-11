@@ -7,6 +7,7 @@ import type {
   OnchainContext,
 } from "@intent-check/types";
 import { decode } from "@intent-check/decoder";
+import { recoverMessageAddress } from "viem";
 import { checkIntegrity, derivePolicy, extractSpend, verifyAgainstIntent } from "@intent-check/intent";
 import { fetchOnchainContext, graphFindings, type DurableStore } from "@intent-check/onchain-context";
 import { isKnownProtocol } from "@intent-check/protocol-registry";
@@ -94,7 +95,22 @@ export function mountVerify(app: Hono<any>, optsLike: VerifyOptionsLike) {
 
     // Checked once: an authorization is either intact or it is not, and a
     // tampered one poisons every call made under it.
-    const authFindings = await checkIntegrity(authorization);
+    const authFindings = await checkIntegrity(authorization, {
+      recoverSigner: (message, signature) =>
+        recoverMessageAddress({ message, signature: signature as `0x${string}` }),
+    });
+
+    // The authorization must be signed by the wallet whose funds it governs.
+    // Without this an attacker could sign a permissive authorization with a
+    // throwaway key and point it at someone else's wallet.
+    const spender = (calls[0] as ProposedCall).from.toLowerCase();
+    if (authorization.signer && authorization.signer.toLowerCase() !== spender) {
+      authFindings.push({
+        code: "INTENT_SIGNER_MISMATCH",
+        severity: "danger",
+        text: `This authorization was signed by ${authorization.signer.slice(0, 10)}…, but the transaction spends from ${spender.slice(0, 10)}….`,
+      });
+    }
 
     let mergedOnchain: OnchainContext | undefined;
 
