@@ -88,6 +88,8 @@
   .glyph { flex: none; width: 1rem; height: 1rem; margin-top: .1rem; }
   .check-title { font-size: .875rem; font-weight: 500; line-height: 1.25rem; margin: 0; }
   .check-body { font-size: .875rem; line-height: 1.25rem; color: var(--neutral-600); margin: .15rem 0 0; }
+  .meta pre { margin: .4rem 0 0; padding: .5rem .6rem; background: var(--muted);
+              border-radius: 6px; font-size: .75rem; overflow-x: auto; white-space: pre; }
   .meta { padding: .6rem 1rem; border-top: 1px solid var(--border); background: rgba(244,244,245,.4);
           font-size: .75rem; color: var(--muted-foreground); }
   code { font-family: ui-monospace, Menlo, monospace; font-size: .8125em; color: var(--neutral-800);
@@ -206,13 +208,47 @@ function parseGoal(raw) {
   };
 }
 
+/**
+ * Every call goes through here so a misconfigured page says so on screen.
+ * The default target is localhost, which is wrong in any browser that has not
+ * been pointed at a deployment — and a bare "Failed to fetch" in the console
+ * tells the person clicking exactly nothing.
+ */
 async function post(path, body) {
-  const r = await fetch(`${JUDGE}${path}`, {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-api-key": KEY },
-    body: JSON.stringify(body),
-  });
+  let r;
+  try {
+    r = await fetch(`${JUDGE}${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-api-key": KEY },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    fail(`Could not reach the verifier at <code>${JUDGE}</code>.`,
+      `Nothing is listening there. Point this page at a running verifier by pasting ` +
+      `this into the browser console and reloading:` +
+      `<pre>localStorage.setItem("evzi.judge", "https://your-worker.workers.dev");\n` +
+      `localStorage.setItem("evzi.key", "your-api-key");</pre>`);
+    throw new Error("verifier unreachable");
+  }
+  if (r.status === 401) {
+    fail("The verifier rejected the api key.",
+      `It answered 401. Set a valid <code>evzi.key</code> in localStorage and reload.`);
+    throw new Error("unauthorized");
+  }
+  if (!r.ok && r.status !== 400) {
+    fail(`The verifier answered ${r.status}.`, "Check the worker's logs.");
+    throw new Error(`verifier ${r.status}`);
+  }
   return r.json();
+}
+
+/** Surface a configuration problem where the person clicking will see it. */
+function fail(title, detail) {
+  card(`<div class="head"><span class="who">Not configured</span>` +
+       `<span class="verdict REJECT">CANNOT RUN</span></div>` +
+       `<div class="said">${title}</div>` +
+       `<div class="meta">${detail}</div>`);
+  setStatus("red");
 }
 
 $("authorize").onclick = async () => {
@@ -274,11 +310,13 @@ $("inject").onclick = async () => {
   $("inject").disabled = true;
   card(`<div class="head"><span class="who">Page the agent is reading</span></div>` +
        `<div class="poison"><span class="src">untrusted content</span>${POISON}</div>`);
-  await runAgent({ injected: POISON, rounds: 1 });
+  try {
+    await runAgent({ injected: POISON, rounds: 1 });
+  } catch { /* already reported on screen */ }
   $("inject").disabled = false;
 };
 
-$("run").onclick = () => runAgent({ rounds: 2 });
+$("run").onclick = () => runAgent({ rounds: 2 }).catch(() => { $("run").disabled = false; });
 
 async function runAgent({ injected, rounds }) {
   $("run").disabled = true;

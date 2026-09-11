@@ -17,11 +17,20 @@ than decorative.
 
 ```bash
 python3 -m http.server 8765 --directory apps/demo-pages
+```
 
-# point the console at the deployed verifier (browser console, once):
+**Then, in the browser you will actually record — its console, once.** The
+setting lives in that browser profile's localStorage, so a different window or
+profile needs its own. If you skip it the page says `CANNOT RUN` and shows you
+this snippet rather than failing silently.
+
+```js
 localStorage.setItem("evzi.judge", "https://intent-check-judge.evzi.workers.dev");
 localStorage.setItem("evzi.key", "<contents of .judge-prod-key>");
+location.reload();
+```
 
+```bash
 # hardware signer, in a second visible terminal
 export JUDGE_URL=https://intent-check-judge.evzi.workers.dev
 export JUDGE_API_KEY=$(cat .judge-prod-key)
