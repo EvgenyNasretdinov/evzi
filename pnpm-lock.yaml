@@ -150,6 +150,9 @@ importers:
       hono:
         specifier: ^4.6.0
         version: 4.12.18
+      viem:
+        specifier: ^2.21.0
+        version: 2.48.11(typescript@5.9.3)(zod@3.22.3)
     devDependencies:
       '@cloudflare/workers-types':
         specifier: ^4.20240924.0

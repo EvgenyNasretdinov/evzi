@@ -21,6 +21,8 @@ export default defineConfig(({ mode }) => {
       alias: { "@": path.resolve(__dirname, "src") },
     },
     define: {
+      "import.meta.env.VITE_JUDGE_BASE_URL": JSON.stringify(env.JUDGE_BASE_URL ?? ""),
+      "import.meta.env.VITE_JUDGE_API_KEY": JSON.stringify(env.JUDGE_API_KEY ?? ""),
       "import.meta.env.VITE_TENDERLY_ACCESS_KEY": JSON.stringify(env.TENDERLY_ACCESS_KEY ?? ""),
       "import.meta.env.VITE_TENDERLY_ACCOUNT_SLUG": JSON.stringify(env.TENDERLY_ACCOUNT_SLUG ?? ""),
       "import.meta.env.VITE_TENDERLY_PROJECT_SLUG": JSON.stringify(env.TENDERLY_PROJECT_SLUG ?? ""),

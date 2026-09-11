@@ -356,6 +356,14 @@ pnpm --filter @intent-check/extension build
 # chrome://extensions → Developer mode ON → Load unpacked → apps/extension/dist
 ```
 
+The build points at the deployed judge by default, so a freshly built
+extension works without running a backend. It needs `JUDGE_API_KEY` in the
+workspace `.env` to authenticate. To run against a local worker instead, add
+`JUDGE_BASE_URL=http://127.0.0.1:8787` and rebuild.
+
+Both are baked into the bundle at build time, so `dist/` contains whatever key
+you built with — it is gitignored for that reason.
+
 ### 3. Tenderly simulation (optional)
 
 Without Tenderly the extension still runs — the verdict just skips the
