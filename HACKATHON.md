@@ -222,6 +222,15 @@ entering that track.
 
 ---
 
+## Where to look
+
+| | |
+|---|---|
+| [`README.md`](README.md) | what it is, the agent problem, the flow diagram |
+| [`docs/CHECKS.md`](docs/CHECKS.md) | every check and what is out of scope |
+| [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | repo layout and how to run it |
+| [`apps/judge/ab/RESULTS.md`](apps/judge/ab/RESULTS.md) | the measurement |
+
 ## Running it
 
 ```bash
