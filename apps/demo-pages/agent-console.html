@@ -614,10 +614,15 @@ async function runAgent({ injected, rounds }) {
       `<div class="head"><span class="who">Evzi verifier</span>` +
       `<span class="verdict ${res.policy}">${res.policy.replace("_", " ")}</span></div>` +
       (findings.length ? `<ul class="checks">${findingRows(findings)}</ul>` : "") +
+      // Anchored to the token, not to the verdict. This line runs on every
+      // proposal, so under a rejection about the recipient it would otherwise
+      // read as the reason — and read as contradicting it, since what The Graph
+      // has to say about real USDC is entirely good.
       (t?.symbol || t?.holders || t?.marketCapUsd
-        ? `<div class="meta">live Graph data: ${esc(t.symbol ?? "token")}, canonical = ${t.canonical}` +
-          (t.marketCapUsd ? `, ${usd(t.marketCapUsd)} behind it` : "") +
-          (t.holders ? `, ${t.holders.toLocaleString()} holders` : "") + `</div>`
+        ? `<div class="meta">the token in this call, live from The Graph: ` +
+          `${esc(t.symbol ?? "token")} · canonical ${t.canonical ? "✓" : "✗"}` +
+          (t.marketCapUsd ? ` · ${usd(t.marketCapUsd)} behind it` : "") +
+          (t.holders ? ` · ${t.holders.toLocaleString()} holders` : "") + `</div>`
         : ""));
 
     if (res.policy === "ALLOW") {
