@@ -103,13 +103,23 @@ Kept deliberately small, and every change additive:
 
 Live Graph data is load-bearing: without it the verdict is different.
 
-Two Graph products are composed. The **subgraph gateway** answers in 200–500ms
-and is the only source the verdict blocks on. The **Token API** answers in ~10s
-on the free tier — measured across `/tokens`, `/balances`, `/holders` and
-`/transfers`, all ≈10,000ms — which is far too slow to hold a user waiting to
-sign, so it runs in the background and fills a ten-minute cache that enriches
-later checks. A token is treated as canonical if **either** product vouches for
-it, so one being unavailable does not blind the check.
+Two Graph products are composed, and both are asked at once inside one budget,
+so the wait is the slowest single answer rather than the sum. The **subgraph
+gateway** reports the liquidity and volume standing behind a token in 200–500ms.
+The **Token API** reports how many people hold it.
+
+That second one was rearchitected mid-event, by measurement. On 2026-09-10 the
+Token API answered in ≈10,000ms across `/tokens`, `/balances`, `/holders` and
+`/transfers` — far too slow to hold someone waiting to sign — so it ran in the
+background and filled a ten-minute cache, and a holder count only landed on the
+*second* sighting of a token. Re-measured on 2026-09-12: 0.5–0.7s warm, ~2.5s on
+a cold contract, five runs per endpoint. So the verdict now waits for it, and
+the holder count is there the first time.
+
+The cache stayed, and so did the fallback: a source that misses the budget goes
+on filling that cache for the next lookup rather than holding the verdict. A
+token is treated as canonical if **either** product vouches for it, so one being
+unavailable does not blind the check.
 
 What it catches, live:
 

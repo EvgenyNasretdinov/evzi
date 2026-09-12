@@ -94,9 +94,11 @@ verifiers stay current without reverse-engineering each release.
 ## What worked well
 
 - The gateway is fast and reliable. Every subgraph query in our path returned
-  in 200–500ms, against ~10s for the other data provider we use. That
-  difference decided our architecture: Uniswap subgraph data is what the
-  verdict blocks on, everything slower is background enrichment.
+  in 200–500ms — fast enough that Uniswap subgraph data is what our verdict
+  blocks on, with slower sources allowed to arrive late. (The other data
+  provider we use sat around ~10s when we first measured it and has since
+  improved to well under a second; the subgraph gateway was the fast one from
+  the start.)
 - Registry-grade address stability. Canonical router addresses have been
   stable enough that a bundled whitelist is a viable trust signal, which is
   what lets us distinguish a real router from a lookalike.

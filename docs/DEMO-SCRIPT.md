@@ -56,9 +56,9 @@ Nano S: unlocked, **Ethereum app open**, **blind signing enabled**, Ledger Live
 closed. The tile's header should read `Nano S · 44'/60'/0'/0/0` before you
 start; `daemon not running` or `no device attached` means fix it now.
 
-**Warm the cache.** Click `Compare both tokens, live` once before recording and
-wait for it to finish. The Token API takes about ten seconds on the free tier,
-so on a cold cache the holder count is missing and the tile says so.
+Click `Compare both tokens, live` once before recording anyway. Both Graph
+products answer inside the budget now, but the very first lookup of a cold
+contract runs ~2.5s, and a warm cache makes it instant on camera.
 
 Record at **1920×1080**. The layout is a cockpit at that size; below 1180px wide
 it deliberately falls back to a stacked page, which is not what you want on
@@ -167,15 +167,19 @@ whole video exists for.
 > One thing the old pipeline couldn't do. Contract verification describes code,
 > and a counterfeit token's code is perfectly fine — that's the trick.
 >
-> So we ask The Graph what the market knows. Real USDC on Base: ninety-one
+> So we ask The Graph what the market knows. Real USDC on Base: ninety-odd
 > million behind it, eleven million holders. A token calling itself USDC with an
 > ordinary-looking address: nothing. No market at all — and the verdict says
 > impersonation.
 >
-> Two Graph products, and you can see which answered what. The subgraph comes
-> back in a few hundred milliseconds and the verdict waits on it; the Token API
-> takes about ten seconds on the free tier, so it fills a cache instead of
-> making anyone wait.
+> Two Graph products, and you can see which answered what. The subgraph reports
+> the market standing behind the token, the Token API how many people hold it —
+> both asked at once, both back in well under a second.
+>
+> That part we rebuilt during the hackathon. The Token API took ten seconds when
+> we started, so it ran in the background and the holder count only showed up on
+> the second look. We re-measured two days later, it was half a second, so now
+> the verdict waits for it and the count is there the first time.
 
 ## 2:10–2:30 · The hardware gate
 

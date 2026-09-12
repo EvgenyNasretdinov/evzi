@@ -161,10 +161,11 @@ real USDC (mainnet)   canonical=true    $1.03T volume, 8,787,430 holders
 counterfeit "USDC"    canonical=false   → DANGER, and the verdict says why
 ```
 
-Two Graph products are used together: the subgraph gateway answers in
-200–500ms and is what the verdict waits on; the Token API answers in ~10s on
-the free tier, so it runs in the background and enriches later checks from a
-cache. A token is trusted if *either* can vouch for it.
+Two Graph products are asked at once: the subgraph gateway answers in
+200–500ms with the market standing behind a token, the Token API in 0.5–0.7s
+with how many people hold it. Both are cached, and neither can hold a verdict
+hostage — whatever misses the budget goes on filling the cache for the next
+lookup instead. A token is trusted if *either* can vouch for it.
 
 ### Hardware confirmation
 
