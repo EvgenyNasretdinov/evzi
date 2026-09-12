@@ -74,11 +74,11 @@ existing deterministic checks, producing a policy: `ALLOW` /
 | `packages/intent` | The frozen authorization, canonical-JSON hashing, tamper and expiry detection, the constraint verifier, and `derivePolicy` | 59 |
 | `packages/onchain-context` | Two Graph providers (subgraph gateway + Token API), orchestration with timeout and degradation, a TTL cache, and the findings derived from live data | 48 |
 | `apps/ledger-signer` | Hardware signing daemon that calls the verifier itself before touching the device | 10 |
-| `apps/judge` (additions) | `POST /verify`, `POST /agent/plan`, `/openapi.json`, server-side Graph enrichment, `claimedSymbolFor` | +42 |
-| `apps/demo-pages/agent-console.html` | The propose → verify → correct loop, in one page | — |
+| `apps/judge` (additions) | `POST /verify`, `POST /agent/plan`, `/openapi.json`, server-side Graph enrichment, `claimedSymbolFor`, and the claimed symbol an agent's authorization asserts | +44 |
+| `apps/demo-pages/agent-console.html` | The whole system on one screen: authorization, the agent's browser, the firewall's verdicts, and live tiles for The Graph, the Ledger daemon and the Bazantic gateway | — |
 | `apps/judge/ab/` | The A/B experiment and its recorded result | — |
 
-Tests: **128 → 287**.
+Tests: **128 → 312**.
 
 ### Modified pre-existing files
 
@@ -122,6 +122,19 @@ counterfeit "USDC"    canonical=false  → DANGER GRAPH_TOKEN_IMPERSONATION
 The counterfeit case is one the pre-existing pipeline could not catch at all:
 contract verification describes code, and a counterfeit's code is fine. Only
 market data separates it from the real thing.
+
+`GRAPH_TOKEN_IMPERSONATION` needs to know what the token *claims* to be, and The
+Graph cannot supply that — a counterfeit is precisely a token it never indexed,
+so it carries no symbol there. On the extension path the claim comes from token
+metadata (`claimedSymbolFor`); on the agent path it now comes from the
+authorization the human signed, which is the one place a person asserted a
+symbol. Without that the finding could not fire through `POST /verify` at all.
+Live, against the deployed verifier: the counterfeit comes back
+`canonical=false` with the impersonation finding and a `REJECT`, the real token
+`canonical=true` with $90.7M standing behind it and 10,989,216 holders.
+
+`apps/demo-pages/agent-console.html` runs exactly that comparison from the
+browser, so both products can be seen answering.
 
 Code: `packages/onchain-context/`. Live check: `tests/live/check.ts`.
 

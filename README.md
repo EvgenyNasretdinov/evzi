@@ -66,8 +66,15 @@ authorization. It only reads back the finding codes it was refused with.
 
 The verifier is live at `https://intent-check-judge.evzi.workers.dev` (spec at `/openapi.json`).
 
-Try it: `apps/demo-pages/agent-console.html`. The full submission write-up,
-including what is and is not finished, is in [`HACKATHON.md`](./HACKATHON.md).
+Try it: `apps/demo-pages/agent-console.html` — one screen carrying the whole
+thing. The authorization you freeze and sign, the agent's own browser pointed at
+a page that lies to it, the firewall's verdict on every proposal, and three live
+tiles: The Graph telling a real token from a counterfeit, the Ledger daemon
+refusing to touch the device, and the same proposal verified through the public
+Bazantic gateway with no API key in the page.
+
+The full submission write-up, including what is and is not finished, is in
+[`HACKATHON.md`](./HACKATHON.md).
 
 ### How it fits together
 
