@@ -31,9 +31,9 @@ async function authorization(): Promise<AuthorizedIntent> {
   });
 }
 
-function app() {
+function app(extra: Record<string, unknown> = {}) {
   const a = new Hono();
-  mountVerify(a, () => ({ apiKey: API_KEY }));
+  mountVerify(a, () => ({ apiKey: API_KEY, ...extra }));
   return a;
 }
 
@@ -41,6 +41,16 @@ async function verify(body: unknown, key: string = API_KEY) {
   const res = await app().request("/verify", {
     method: "POST",
     headers: { "content-type": "application/json", "x-api-key": key },
+    body: JSON.stringify(body),
+  });
+  return { status: res.status, body: (await res.json()) as any };
+}
+
+/** The same call, with the live Graph lookup replaced by a fixed context. */
+async function verifyWithOnchain(onchain: unknown, body: unknown) {
+  const res = await app({ fetchOnchain: async () => onchain }).request("/verify", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-api-key": API_KEY },
     body: JSON.stringify(body),
   });
   return { status: res.status, body: (await res.json()) as any };
@@ -160,6 +170,38 @@ describe("judge — POST /verify", () => {
     });
     expect(body.policy).toBe("REJECT");
     expect(body.calls[0].findings.map((f: any) => f.code)).toContain("INTENT_CHAIN_MISMATCH");
+  });
+
+  /**
+   * The claim a counterfeit makes cannot come from The Graph: a counterfeit is
+   * precisely a token The Graph never indexed, so it has no symbol there. On
+   * the agent path the claim lives in the authorization the human signed — the
+   * one place a blue-chip symbol was asserted by a person.
+   */
+  it("flags a token with no market as impersonating the symbol the authorization named", async () => {
+    const { body } = await verifyWithOnchain(
+      { token: { address: USDC, canonical: false }, degraded: false },
+      {
+        authorization: await authorization(),
+        calls: [
+          { chainId: 8453, from: WALLET, to: USDC, data: approveCalldata(DRAINER, amount(500_000_000n)) },
+        ],
+      },
+    );
+    expect(body.calls[0].findings.map((f: any) => f.code)).toContain("GRAPH_TOKEN_IMPERSONATION");
+  });
+
+  it("does not cry impersonation when the market vouches for the token", async () => {
+    const { body } = await verifyWithOnchain(
+      { token: { address: USDC, symbol: "USDC", canonical: true, holders: 8_787_430 }, degraded: false },
+      {
+        authorization: await authorization(),
+        calls: [
+          { chainId: 8453, from: WALLET, to: USDC, data: approveCalldata(DRAINER, amount(500_000_000n)) },
+        ],
+      },
+    );
+    expect(body.calls[0].findings.map((f: any) => f.code)).not.toContain("GRAPH_TOKEN_IMPERSONATION");
   });
 
   it("requires the api key", async () => {

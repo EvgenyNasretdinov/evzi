@@ -17,6 +17,8 @@ export interface VerifyOptions {
   graphApiKey?: string;
   tokenApiJwt?: string;
   store?: DurableStore;
+  /** Seam for tests, so the Graph-derived findings can be exercised offline. */
+  fetchOnchain?: typeof fetchOnchainContext;
 }
 
 export type VerifyOptionsLike = VerifyOptions | ((c: Context) => VerifyOptions);
@@ -42,6 +44,28 @@ const STRICTNESS: Record<AgentPolicy, number> = {
   REQUIRE_APPROVAL: 1,
   REJECT: 2,
 };
+
+/** Symbols worth impersonating — the same set the findings layer trusts. */
+const BLUE_CHIPS = ["USDC", "USDT", "DAI", "WETH", "WBTC"];
+
+/**
+ * What this token is claimed to be, as opposed to what the market says it is.
+ *
+ * The claim cannot come from The Graph: a counterfeit is precisely a token The
+ * Graph never indexed, so it carries no symbol there — which left
+ * GRAPH_TOKEN_IMPERSONATION unreachable on the agent path, where there is no
+ * dApp-supplied metadata to fall back on either. The claim belongs to the
+ * authorization: it is the one place a person asserted a symbol, and they
+ * signed it.
+ */
+function claimedSymbolFor(
+  authorization: AuthorizedIntent,
+  onchain: OnchainContext,
+): string | undefined {
+  if (onchain.token?.symbol) return onchain.token.symbol;
+  const said = `${authorization.raw} ${authorization.goal?.summary ?? ""}`.toUpperCase();
+  return BLUE_CHIPS.find((symbol) => said.includes(symbol));
+}
 
 /** The proposal as a whole is only as permissive as its least permissive call. */
 function strictest(policies: AgentPolicy[]): AgentPolicy {
@@ -128,7 +152,7 @@ export function mountVerify(app: Hono<any>, optsLike: VerifyOptionsLike) {
       const { movements } = extractSpend(decoded, call.chainId);
       const primary = movements[0];
 
-      const onchain = await fetchOnchainContext({
+      const onchain = await (opts.fetchOnchain ?? fetchOnchainContext)({
         chainId: call.chainId,
         token: primary?.token,
         wallet: call.from,
@@ -147,7 +171,7 @@ export function mountVerify(app: Hono<any>, optsLike: VerifyOptionsLike) {
           isKnownSpender: (a) => isKnownProtocol(call.chainId, a),
         }),
         ...graphFindings(onchain, {
-          claimedSymbol: onchain.token?.symbol,
+          claimedSymbol: claimedSymbolFor(authorization, onchain),
           isUnlimitedApproval: primary?.isUnlimited,
           approvedToken: primary?.token,
         }),
