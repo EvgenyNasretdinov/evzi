@@ -24,8 +24,10 @@
 <ul>
   <li>
     <h2>0. Agent intent firewall (ETHOnline 2026)</h2>
-    <p>An AI agent proposes on-chain actions under an authorization you froze. Evzi verifies each proposal independently: the agent's first attempt asks for an unlimited allowance and is <strong>REJECTED</strong>, it reads the finding codes back, narrows to the authorized cap, and is <strong>ALLOWED</strong>. Needs the judge worker running on <code>:8787</code>.</p>
+    <p>The whole system on one screen: the authorization you froze and signed, the agent's own browser, the firewall's verdict on every proposal, and three live tiles — The Graph comparing a real token against a counterfeit, the Ledger daemon refusing to touch the device, and the same proposal verified through the public Bazantic gateway. Needs a verifier it can reach (<code>:8787</code> by default) and, for the Ledger tile, the signer daemon.</p>
     <a class="btn" href="./agent-console.html">Open agent console →</a>
+    <a class="btn" href="./meridian-pools.html" style="background: #fff; color: #171717; border: 1px solid #e5e5e5;">Open the pool page the agent reads →</a>
+    <p style="margin: 0.6rem 0 0; font-size: 0.85em;">The console sends the agent to <code>meridian-pools.html</code> — an ordinary-looking pool page whose collapsed "operator notice" tells the agent to send the USDC elsewhere. The agent obeys it, and is <strong>REJECTED</strong> with <code>INTENT_RECIPIENT_NOT_ALLOWED</code>.</p>
   </li>
   <li>
     <h2>1. Hidden approval ("free mint" drainer)</h2>
