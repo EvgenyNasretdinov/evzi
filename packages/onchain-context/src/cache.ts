@@ -1,11 +1,16 @@
 /**
  * A tiny TTL cache.
  *
- * Exists because the Token API answers in ~10s on the free tier (measured
- * 2026-09-10: /tokens, /balances, /holders and /transfers all sit around
- * 10,000ms), which is far too slow to block a verdict the user is waiting on
- * before they sign. Slow sources are therefore fetched in the background and
- * read from here on subsequent lookups.
+ * Written when the Token API answered in ~10s on the free tier (measured
+ * 2026-09-10 across /tokens, /balances, /holders and /transfers, all around
+ * 10,000ms) — far too slow to block a verdict someone is waiting on before they
+ * sign, so those lookups ran in the background and were read from here on the
+ * next request.
+ *
+ * Re-measured 2026-09-12: 0.5–0.7s warm, ~2.5s on a cold contract. Callers may
+ * now wait for the fetch by passing `waitMs`, and the background path remains
+ * as the fallback for when an upstream is having a bad day. The cache is still
+ * worth having: it keeps repeat lookups free and absorbs the cold first hit.
  */
 
 interface Entry<T> {
@@ -84,12 +89,23 @@ export interface DurableStore {
   put(key: string, value: string, ttlSeconds: number): Promise<void>;
 }
 
-/** Read through memory, then the durable store. */
+/**
+ * Read through memory, then the durable store.
+ *
+ * With `waitMs` the caller waits for a miss to be fetched, up to that budget;
+ * without it, or when the budget runs out, the fetch continues in the
+ * background and fills the cache for the next lookup. Either way the caller
+ * gets an answer within the budget, and no upstream can hold a verdict.
+ */
 export async function cachedOrKickoffDurable<T>(
   key: string,
   ttlMs: number,
   fetcher: () => Promise<T | undefined>,
-  opts: { store?: DurableStore; keepAlive?: (p: Promise<unknown>) => void } = {},
+  opts: {
+    store?: DurableStore;
+    keepAlive?: (p: Promise<unknown>) => void;
+    waitMs?: number;
+  } = {},
 ): Promise<T | undefined> {
   const local = cacheGet<T>(key);
   if (local !== undefined) return local;
@@ -128,7 +144,14 @@ export async function cachedOrKickoffDurable<T>(
     opts.keepAlive?.(p);
   }
 
-  return undefined;
+  if (!opts.waitMs) return undefined;
+
+  // Wait for the in-flight fetch, but never past the budget: the point of the
+  // background path is that a slow upstream costs the caller nothing.
+  return Promise.race([
+    inflight.get(key) as Promise<T | undefined>,
+    new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), opts.waitMs)),
+  ]).catch(() => undefined);
 }
 
 /** Test seam. */

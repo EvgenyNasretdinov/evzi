@@ -46,7 +46,8 @@ const DEFAULT_TIMEOUT_MS = 3000;
 
 /**
  * Token API results stay usable far longer than the verdict they serve: holder
- * counts and balances move slowly, and the alternative is no signal at all.
+ * counts and balances move slowly, so a cached answer is nearly as good as a
+ * fresh one, and repeat lookups cost nothing.
  */
 const SLOW_SOURCE_TTL_MS = 600_000;
 
@@ -103,11 +104,15 @@ export async function fetchOnchainContext(args: ContextArgs): Promise<OnchainCon
   const wantToken = Boolean(args.token);
   const wantWallet = Boolean(args.wallet && args.tokenApiJwt);
 
-  // Fast path — the only thing we block on. The subgraph answers in a few
-  // hundred milliseconds, which is the budget a user waiting to sign has.
-  const liquidity =
+  // Both Graph products are asked at once and share one budget, so the wait is
+  // the slowest single answer rather than the sum of them. Each is cached and
+  // may fall back to filling that cache in the background: a source that has a
+  // bad day costs the caller the budget, never the verdict.
+  const slow = { store: args.store, keepAlive: args.keepAlive, waitMs: timeout };
+
+  const [liquidity, holders, wallet] = await Promise.all([
     args.token && args.graphApiKey
-      ? await settle(
+      ? settle(
           d.tokenReputation({
             chainId: args.chainId,
             token: args.token,
@@ -115,31 +120,26 @@ export async function fetchOnchainContext(args: ContextArgs): Promise<OnchainCon
           }),
           timeout,
         )
-      : undefined;
+      : undefined,
 
-  // Slow path — never awaited. Served from cache when warm, kicked off in the
-  // background when cold, so the first sighting of a token costs nothing and
-  // every later one is enriched.
-  const slow = { store: args.store, keepAlive: args.keepAlive };
-
-  const holders =
     args.token && args.tokenApiJwt
-      ? await cachedOrKickoffDurable(
+      ? cachedOrKickoffDurable(
           `tokens:${args.chainId}:${args.token.toLowerCase()}`,
           SLOW_SOURCE_TTL_MS,
           () => d.tokenStats({ chainId: args.chainId, address: args.token!, jwt: args.tokenApiJwt! }),
           slow,
         )
-      : undefined;
+      : undefined,
 
-  const wallet = wantWallet
-    ? await cachedOrKickoffDurable(
-        `balances:${args.chainId}:${args.wallet!.toLowerCase()}`,
-        SLOW_SOURCE_TTL_MS,
-        () => d.walletBalances({ chainId: args.chainId, address: args.wallet!, jwt: args.tokenApiJwt! }),
-        slow,
-      )
-    : undefined;
+    wantWallet
+      ? cachedOrKickoffDurable(
+          `balances:${args.chainId}:${args.wallet!.toLowerCase()}`,
+          SLOW_SOURCE_TTL_MS,
+          () => d.walletBalances({ chainId: args.chainId, address: args.wallet!, jwt: args.tokenApiJwt! }),
+          slow,
+        )
+      : undefined,
+  ]);
 
   const token = args.token ? mergeToken(args.token.toLowerCase(), liquidity, holders) : undefined;
 

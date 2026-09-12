@@ -47,8 +47,15 @@ describe("onchain-context — fetchOnchainContext", () => {
     expect((await fetchOnchainContext(args)).token?.canonical).toBe(true);
   });
 
-  it("does not wait for the slow source on a cold cache", async () => {
-    let resolved = false;
+  /**
+   * The Token API answered in ~10s when this package was written, so it was
+   * never awaited: the holder count landed on the second sighting of a token
+   * and the first verdict went out without it. Re-measured 2026-09-12 across
+   * /tokens and /balances at 0.5–0.7s warm and ~2.5s cold, which fits the
+   * budget the subgraph already lives inside — so the count must now be there
+   * the first time.
+   */
+  it("waits for the Token API when it answers inside the budget", async () => {
     const ctx = await fetchOnchainContext({
       chainId: 1,
       token: USDC,
@@ -56,20 +63,40 @@ describe("onchain-context — fetchOnchainContext", () => {
       tokenApiJwt: "j",
       deps: {
         tokenReputation: async () => ({ address: USDC, canonical: true }),
-        tokenStats: () =>
-          new Promise((r) =>
-            setTimeout(() => {
-              resolved = true;
-              r({ address: USDC, canonical: true, holders: 1 });
-            }, 50),
-          ),
+        tokenStats: async () => {
+          await new Promise((r) => setTimeout(r, 20));
+          return { address: USDC, canonical: true, symbol: "USDC", holders: 8_787_430 };
+        },
       },
     });
-    // The verdict is already formed while the Token API call is still running.
-    expect(resolved).toBe(false);
+    expect(ctx.token?.holders).toBe(8_787_430);
+    expect(ctx.token?.symbol).toBe("USDC");
+    expect(ctx.degraded).toBe(false);
+  });
+
+  /** Faster upstream, same guarantee: no source may hold a verdict hostage. */
+  it("gives up on the Token API rather than holding the verdict past the budget", async () => {
+    const args = {
+      chainId: 1,
+      token: USDC,
+      graphApiKey: "k",
+      tokenApiJwt: "j",
+      timeoutMs: 10,
+      deps: {
+        tokenReputation: async () => ({ address: USDC, canonical: true }),
+        tokenStats: async () => {
+          await new Promise((r) => setTimeout(r, 200));
+          return { address: USDC, canonical: true, holders: 42 };
+        },
+      },
+    };
+    const ctx = await fetchOnchainContext(args);
     expect(ctx.token?.canonical).toBe(true);
     expect(ctx.token?.holders).toBeUndefined();
+
+    // The answer that arrived late is not thrown away; it fills the cache.
     await drainInflight();
+    expect((await fetchOnchainContext(args)).token?.holders).toBe(42);
   });
 
   it("condemns a token only when both products decline to vouch", async () => {
