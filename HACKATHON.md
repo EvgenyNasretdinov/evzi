@@ -121,6 +121,15 @@ on filling that cache for the next lookup rather than holding the verdict. A
 token is treated as canonical if **either** product vouches for it, so one being
 unavailable does not blind the check.
 
+A third endpoint, Token API `/balances`, backs `GRAPH_EXPOSURE`: an unlimited
+approval reaches a wallet's whole balance, not just the amount being spent, and
+the warning can only name that balance if something reports it. It is asked on
+every verdict and is the one Graph signal the demo cannot make fire — the page
+signs with a key generated in the browser, and the verifier requires the spender
+to be the signer, so the demo wallet is empty by construction. The tile says
+exactly that rather than hiding the row: a check that is invisible when it finds
+nothing cannot be told from one that is not running.
+
 What it catches, live:
 
 ```
@@ -289,6 +298,10 @@ Everything: `pnpm test && pnpm typecheck`.
   `to`/`recipient`/`receiver` and returns nothing for `to_address` at any
   `age`, so the query is not expressible on this tier. A check that silently
   never fires is worse than no check.
+- **`GRAPH_EXPOSURE` never fires in the demo.** It needs a wallet that holds the
+  token being approved, and the demo's wallet is a fresh in-browser key. The
+  check works on the extension path, where the wallet is the user's own; on
+  camera it can only be shown reporting honestly that there is nothing to weigh.
 - **The A/B sample is small** — eleven proposals, three trials. The three total
   failures are unambiguous and structural, but the percentages should not be
   read as precise. Caveats are listed in `ab/RESULTS.md`.

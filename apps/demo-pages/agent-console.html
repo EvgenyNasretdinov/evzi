@@ -614,8 +614,9 @@ async function runAgent({ injected, rounds }) {
       `<div class="head"><span class="who">Evzi verifier</span>` +
       `<span class="verdict ${res.policy}">${res.policy.replace("_", " ")}</span></div>` +
       (findings.length ? `<ul class="checks">${findingRows(findings)}</ul>` : "") +
-      (t?.symbol || t?.holders
+      (t?.symbol || t?.holders || t?.marketCapUsd
         ? `<div class="meta">live Graph data: ${esc(t.symbol ?? "token")}, canonical = ${t.canonical}` +
+          (t.marketCapUsd ? `, ${usd(t.marketCapUsd)} behind it` : "") +
           (t.holders ? `, ${t.holders.toLocaleString()} holders` : "") + `</div>`
         : ""));
 
@@ -667,6 +668,7 @@ $("askGraph").onclick = async () => {
   const raw = "Swap at most 500 USDC to ETH on Base, no unlimited approvals";
   const rows = [];
   let degraded = false;
+  let walletView;
   try {
     for (const [label, token] of [["real USDC", USDC_BASE], [`"USDC" ${COUNTERFEIT.slice(0, 8)}…`, COUNTERFEIT]]) {
       const { intent } = await freeze(raw, token);
@@ -675,6 +677,7 @@ $("askGraph").onclick = async () => {
         calls: [{ chainId: 8453, from: wallet, to: token, data: approveData(ROUTER_BASE, 500000000n) }],
       });
       const t = res.onchain?.token ?? {};
+      walletView = res.onchain?.wallet ?? walletView;
       degraded = degraded || Boolean(res.onchain?.degraded);
       const evidence = [
         t.marketCapUsd ? `${usd(t.marketCapUsd)} behind it · subgraph` : null,
@@ -684,7 +687,7 @@ $("askGraph").onclick = async () => {
       rows.push(
         `<div class="row"><span class="k"><b>${esc(label)}</b><br />` +
         `<span class="dim">${esc(evidence)}</span>` +
-        (graphFinding ? `<br /><span class="no">${esc(graphFinding.code)}</span>` : "") +
+        (graphFinding ? `<span class="no"> · ${esc(graphFinding.code)}</span>` : "") +
         `</span><span class="${t.canonical ? "ok" : "no"}">canonical ${t.canonical ? "✓" : "✗"}</span></div>`);
     }
   } catch {
@@ -693,8 +696,22 @@ $("askGraph").onclick = async () => {
     return;
   }
 
-  out.innerHTML = rows.join("") +
-    `<div class="note">Both products asked at once: the subgraph for liquidity, the Token API for holders.` +
+  // The Token API's third endpoint. It is asked on every verdict, so it belongs
+  // on screen whether or not it has anything to say — a check that is invisible
+  // when it finds nothing is indistinguishable from one that is not running.
+  const held = walletView?.balances?.filter((b) => b.quantity) ?? [];
+  const walletRow = walletView
+    ? `<div class="row"><span class="k">wallet ${esc(walletView.address.slice(0, 8))}… · Token API balances<br />` +
+      `<span class="dim">` +
+      (held.length
+        ? `holds ${esc(held.slice(0, 2).map((b) => `${b.quantity.toLocaleString()} ${b.symbol ?? "tokens"}`).join(", "))} — ` +
+          `an unlimited approval would reach all of it`
+        : `no holdings — a browser-made key, so exposure has nothing to weigh`) +
+      `</span></span></div>`
+    : "";
+
+  out.innerHTML = rows.join("") + walletRow +
+    `<div class="note">Asked at once: subgraph for liquidity, Token API for holders and balances.` +
     (degraded ? ` <span class="warnc">One upstream did not answer in time on this call — holders come from the cache once warm.</span>` : "") +
     `</div>`;
   btn.disabled = false;

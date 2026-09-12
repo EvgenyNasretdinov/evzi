@@ -176,6 +176,10 @@ whole video exists for.
 > the market standing behind the token, the Token API how many people hold it —
 > both asked at once, both back in well under a second.
 >
+> Third line is the balances endpoint, and it's honest about finding nothing:
+> this demo signs with a key made in the browser, so there's no balance to put at
+> risk. On a real wallet that line is what makes an unlimited approval concrete.
+>
 > That part we rebuilt during the hackathon. The Token API took ten seconds when
 > we started, so it ran in the background and the holder count only showed up on
 > the second look. We re-measured two days later, it was half a second, so now
