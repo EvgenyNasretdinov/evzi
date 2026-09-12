@@ -694,7 +694,7 @@ $("askGraph").onclick = async () => {
   }
 
   out.innerHTML = rows.join("") +
-    `<div class="note">Subgraph: 200–500ms, the verdict waits on it. Token API: ~10s, so it fills a cache.` +
+    `<div class="note">Both products asked at once: the subgraph for liquidity, the Token API for holders.` +
     (degraded ? ` <span class="warnc">One upstream did not answer in time on this call — holders come from the cache once warm.</span>` : "") +
     `</div>`;
   btn.disabled = false;
